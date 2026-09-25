@@ -1,0 +1,91 @@
+import { Quiz } from '../types/exercise';
+
+export const INITIAL_QUIZZES: Quiz[] = [
+  {
+    id: 'quiz-foundations',
+    lessonId: 'lesson-1-what-is-qubit',
+    title: 'Foundations & Superposition Quiz',
+    description: 'Test your understanding of qubits, state vectors, and measurement probabilities.',
+    points: 100,
+    questions: [
+      {
+        id: 'q1',
+        question: 'If a qubit is in the state |ψ⟩ = (1/√2)|0⟩ + (1/√2)|1⟩, what is the probability of measuring 0?',
+        options: ['25%', '50%', '70.7%', '100%'],
+        correctIndex: 1,
+        explanation: 'According to the Born rule, P(0) = |α|² = |1/√2|² = 1/2 = 50%.',
+        type: 'probability',
+      },
+      {
+        id: 'q2',
+        question: 'Which quantum gate transforms |0⟩ into equal superposition (|0⟩ + |1⟩)/√2?',
+        options: ['Pauli-X', 'Pauli-Z', 'Hadamard (H)', 'CNOT'],
+        correctIndex: 2,
+        explanation: 'The Hadamard gate creates an equal superposition of computational basis states.',
+        type: 'multiple_choice',
+      },
+      {
+        id: 'q3',
+        question: 'What happens immediately after measuring a qubit in superposition?',
+        options: [
+          'It continues in superposition undisturbed',
+          'Its wavefunction collapses to the measured state (|0⟩ or |1⟩)',
+          'It flips to the opposite state',
+          'It emits an entangled photon',
+        ],
+        correctIndex: 1,
+        explanation: 'Measurement permanently collapses the quantum state to the observed eigenstate.',
+        type: 'multiple_choice',
+      },
+      {
+        id: 'q4',
+        question: 'True or False: Quantum amplitudes must always be positive real numbers.',
+        options: ['True', 'False'],
+        correctIndex: 1,
+        explanation: 'False! Quantum amplitudes are complex numbers (with magnitude and phase) that can interfere destructively.',
+        type: 'true_false',
+      },
+    ],
+  },
+  {
+    id: 'quiz-gates-circuits',
+    lessonId: 'lesson-15-cnot',
+    title: 'Quantum Gates & Entanglement Quiz',
+    description: 'Verify your mastery of Pauli gates, phase rotations, and multi-qubit operations.',
+    points: 100,
+    questions: [
+      {
+        id: 'q5',
+        question: 'What is the action of the Pauli-X gate on state |1⟩?',
+        options: ['|1⟩', '|0⟩', '-|1⟩', 'i|0⟩'],
+        correctIndex: 1,
+        explanation: 'The Pauli-X gate is the quantum NOT gate: X|1⟩ = |0⟩.',
+        type: 'multiple_choice',
+      },
+      {
+        id: 'q6',
+        question: 'If a CNOT gate has control qubit = 0 and target qubit = 1, what does it output for input |01⟩?',
+        options: ['|01⟩', '|11⟩', '|00⟩', '|10⟩'],
+        correctIndex: 0,
+        explanation: 'Because the control qubit is 0, the target qubit is left completely unchanged: |01⟩ remains |01⟩.',
+        type: 'circuit_reading',
+      },
+      {
+        id: 'q7',
+        question: 'In the Bell state (|00⟩ + |11⟩)/√2, what are the chances of measuring outcome 01?',
+        options: ['50%', '25%', '0%', '100%'],
+        correctIndex: 2,
+        explanation: 'The state contains only terms for |00⟩ and |11⟩. Amplitudes for |01⟩ and |10⟩ are strictly 0.',
+        type: 'probability',
+      },
+      {
+        id: 'q8',
+        question: 'Which gate sequence is mathematically equivalent to the Pauli-X gate?',
+        options: ['H · H', 'Z · Z', 'H · Z · H', 'S · S'],
+        correctIndex: 2,
+        explanation: 'H · Z · H = X because Hadamard rotates between Z and X bases.',
+        type: 'multiple_choice',
+      },
+    ],
+  },
+];

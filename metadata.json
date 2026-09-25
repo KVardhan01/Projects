@@ -1,0 +1,6 @@
+{
+  "name": "Qubify",
+  "description": "AI-Powered Quantum Algorithm Learning Platform featuring interactive circuit design, real browser quantum simulation, Qiskit integration, and progressive curriculum.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
