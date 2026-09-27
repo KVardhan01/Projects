@@ -191,21 +191,10 @@ export const QiskitCodeEditor: React.FC = () => {
           loading={
             <div className="p-4 text-slate-400 text-xs font-mono flex items-center gap-2">
               <span className="w-3 h-3 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
-              Loading Python / Qiskit Code Editor...
+              Loading Python / Qiskit Monaco Editor...
             </div>
           }
         />
-
-        {/* Instant Fallback Textarea if Monaco is not mounted */}
-        {!isEditorReady && (
-          <textarea
-            aria-label="Python / Qiskit Code Editor Fallback"
-            value={localCode}
-            onChange={(e) => handleEditorChange(e.target.value)}
-            spellCheck={false}
-            className="absolute inset-0 w-full h-full bg-[#1e1e1e] text-cyan-200 font-mono text-xs p-3 resize-none focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed z-0"
-          />
-        )}
       </div>
 
       {/* Footer Info */}
