@@ -68,7 +68,7 @@ A comprehensive, fully functional educational web application built with React, 
 9. **Persistence & Authentication**
    - Google Identity Services authentication
    - Persistent relational data store backed by Google Sheets API v4 (19 tabs)
-   - High-fidelity LocalStorage Demo Mode for offline evaluation
+   - Role-based routing enforced by Google Sheets Users directory
 
 ---
 
@@ -78,7 +78,7 @@ A comprehensive, fully functional educational web application built with React, 
 # 1. Install dependencies
 npm install
 
-# 2. Configure environment variables (optional for Demo Mode)
+# 2. Configure environment variables
 cp .env.example .env
 
 # 3. Start development server

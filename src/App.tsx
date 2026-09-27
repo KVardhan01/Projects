@@ -38,7 +38,7 @@ interface ProtectedProps {
 const ProtectedRoute: React.FC<ProtectedProps> = ({ children, allowedRoles }) => {
   const { user, role, isAuthenticated } = useAuth();
 
-  if (!isAuthenticated && !user) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -49,6 +49,22 @@ const ProtectedRoute: React.FC<ProtectedProps> = ({ children, allowedRoles }) =>
   return children;
 };
 
+const RootRedirect: React.FC = () => {
+  const { user, isAuthenticated } = useAuth();
+
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role === 'ADMIN') {
+    return <Navigate to="/admin" replace />;
+  }
+  if (user.role === 'INSTRUCTOR') {
+    return <Navigate to="/instructor" replace />;
+  }
+  return <Navigate to="/student/dashboard" replace />;
+};
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -56,26 +72,47 @@ export default function App() {
         <QuantumProvider>
           <ProgressProvider>
             <Routes>
+              {/* Root always redirects to /login */}
+              <Route path="/" element={<Navigate to="/login" replace />} />
+
               {/* Public Auth Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-              {/* Main App Layout */}
+              {/* Main App Layout (All routes strictly protected) */}
               <Route
-                path="/"
                 element={
                   <ProtectedRoute>
                     <AppLayout />
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="learn" element={<LearnPathPage />} />
+                {/* Student Dashboard */}
+                <Route
+                  path="student/dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}>
+                      <DashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="dashboard" element={<Navigate to="/student/dashboard" replace />} />
+
+                {/* Learning Path Routes */}
+                <Route path="learning" element={<LearnPathPage />} />
+                <Route path="learning/:moduleId" element={<LearnPathPage />} />
+                <Route path="learning/:moduleId/:lessonId" element={<LessonPage />} />
+                <Route path="learn" element={<Navigate to="/learning" replace />} />
                 <Route path="learn/:moduleId" element={<LearnPathPage />} />
                 <Route path="learn/:moduleId/:lessonId" element={<LessonPage />} />
-                <Route path="lab" element={<LabPage />} />
+
+                {/* Circuit Lab Routes */}
+                <Route path="circuit-lab" element={<LabPage />} />
+                <Route path="circuit-lab/:circuitId" element={<LabPage />} />
+                <Route path="lab" element={<Navigate to="/circuit-lab" replace />} />
                 <Route path="lab/:circuitId" element={<LabPage />} />
+
+                {/* General Authenticated Features */}
                 <Route path="exercises" element={<ExercisesPage />} />
                 <Route path="exercises/:exerciseId" element={<ExerciseDetailPage />} />
                 <Route path="reference" element={<ReferencePage />} />
@@ -83,7 +120,7 @@ export default function App() {
                 <Route path="achievements" element={<AchievementsPage />} />
                 <Route path="profile" element={<ProfilePage />} />
 
-                {/* Instructor Protected Routes */}
+                {/* Instructor-only Protected Routes */}
                 <Route
                   path="instructor"
                   element={
@@ -108,8 +145,16 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="instructor/analytics"
+                  element={
+                    <ProtectedRoute allowedRoles={['INSTRUCTOR', 'ADMIN']}>
+                      <InstructorStudentsPage />
+                    </ProtectedRoute>
+                  }
+                />
 
-                {/* Admin Protected Routes */}
+                {/* Admin-only Protected Routes */}
                 <Route
                   path="admin"
                   element={
@@ -127,17 +172,21 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="admin/config"
+                  path="admin/settings"
                   element={
                     <ProtectedRoute allowedRoles={['ADMIN']}>
                       <AdminConfigPage />
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="admin/config"
+                  element={<Navigate to="/admin/settings" replace />}
+                />
               </Route>
 
-              {/* Catch-all */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              {/* Catch-all: Route unhandled paths to /login */}
+              <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
           </ProgressProvider>
         </QuantumProvider>

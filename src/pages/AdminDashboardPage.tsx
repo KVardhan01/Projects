@@ -53,7 +53,7 @@ export const AdminDashboardPage: React.FC = () => {
             <Database className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="text-base font-bold text-slate-100">
-            {GoogleSheetsService.isConfigured() ? 'Google Sheets v4' : 'LocalStorage (Demo)'}
+            {GoogleSheetsService.isConfigured() ? 'Google Sheets v4' : 'Local Relational Store'}
           </div>
           <div className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
             <span
@@ -64,7 +64,7 @@ export const AdminDashboardPage: React.FC = () => {
             <span>
               {GoogleSheetsService.isConfigured()
                 ? `ID: ${GoogleSheetsService.getSpreadsheetId().slice(0, 10)}...`
-                : 'Demo Mode Active'}
+                : 'Not Configured'}
             </span>
           </div>
           <button

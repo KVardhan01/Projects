@@ -39,44 +39,83 @@ export class LocalDatabase {
     }
   }
 
-  // --- Users ---
+  static purgeLegacyDemoData(): void {
+    try {
+      localStorage.removeItem('qll_demo_role');
+      localStorage.removeItem('qubify_demo_mode');
+      localStorage.removeItem('qubify_role');
+      localStorage.removeItem('demo_role');
+      localStorage.removeItem('qll_users_v1');
+      localStorage.removeItem('qll_demo_user');
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    } catch {
+      // ignore
+    }
+  }
+
+  // --- Users (Source of truth is Google Sheets Users tab) ---
   static getUsers(): UserProfile[] {
     return this.getItem<UserProfile[]>(STORAGE_KEYS.USERS, []);
   }
 
+  static findUserByEmailOrId(query: string): UserProfile | null {
+    const clean = query.trim().toLowerCase();
+    const users = this.getUsers();
+    return (
+      users.find(
+        (u) =>
+          u.email.toLowerCase() === clean ||
+          u.googleId.toLowerCase() === clean ||
+          u.id.toLowerCase() === clean
+      ) || null
+    );
+  }
+
   static saveUser(user: UserProfile): void {
     const users = this.getUsers();
-    const idx = users.findIndex((u) => u.id === user.id || u.googleId === user.googleId);
+    const idx = users.findIndex((u) => u.id === user.id || u.googleId === user.googleId || u.email.toLowerCase() === user.email.toLowerCase());
     if (idx >= 0) {
       users[idx] = user;
     } else {
       users.push(user);
     }
     this.setItem(STORAGE_KEYS.USERS, users);
-    this.setItem(STORAGE_KEYS.CURRENT_USER, user);
+    const currentUser = this.getCurrentUser();
+    if (currentUser && (currentUser.id === user.id || currentUser.email.toLowerCase() === user.email.toLowerCase())) {
+      this.setItem(STORAGE_KEYS.CURRENT_USER, user);
+    }
   }
 
   static getCurrentUser(): UserProfile | null {
     const user = this.getItem<UserProfile | null>(STORAGE_KEYS.CURRENT_USER, null);
-    if (user) {
-      // If user has legacy hardcoded prototype values and no actual lesson progress, sanitize to 0
-      const progress = this.getProgress(user.id);
-      if (
-        progress.length === 0 &&
-        (user.xp === 2065 || user.confidence === 84 || user.streak === 7 || user.weeklyGoalProgress === 48)
-      ) {
-        user.xp = 0;
-        user.streak = 0;
-        user.confidence = 0;
-        user.weeklyGoalProgress = 0;
-        this.saveUser(user);
-      }
+    if (!user) return null;
+    // Reject any fake demo user, inactive user, or user without email
+    if (
+      !user.email ||
+      !user.isActive ||
+      user.id?.toLowerCase().includes('alex') ||
+      user.id?.toLowerCase().includes('demo') ||
+      user.email?.toLowerCase().includes('example.edu') ||
+      user.email?.toLowerCase().includes('quantumlab') ||
+      user.name?.toLowerCase().includes('alex') ||
+      user.name?.toLowerCase().includes('demo') ||
+      user.name?.toLowerCase().includes('sterling') ||
+      user.name?.toLowerCase().includes('marcus') ||
+      user.name?.toLowerCase().includes('vance') ||
+      user.name?.toLowerCase().includes('professor')
+    ) {
+      this.setCurrentUser(null);
+      return null;
     }
     return user;
   }
 
   static setCurrentUser(user: UserProfile | null): void {
-    this.setItem(STORAGE_KEYS.CURRENT_USER, user);
+    if (user === null) {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    } else {
+      this.setItem(STORAGE_KEYS.CURRENT_USER, user);
+    }
   }
 
   // --- Circuits ---
@@ -196,10 +235,10 @@ export class LocalDatabase {
   }
 
   // --- Attempts ---
-  static getCircuitAttempts(exerciseId?: string): CircuitAttempt[] {
+  static getCircuitAttempts(filterId?: string): CircuitAttempt[] {
     const attempts = this.getItem<CircuitAttempt[]>(STORAGE_KEYS.ATTEMPTS, []);
-    if (exerciseId) {
-      return attempts.filter((a) => a.exerciseId === exerciseId);
+    if (filterId) {
+      return attempts.filter((a) => a.userId === filterId || a.exerciseId === filterId);
     }
     return attempts;
   }
@@ -217,10 +256,10 @@ export class LocalDatabase {
   }
 
   // --- Quiz Attempts ---
-  static getQuizAttempts(quizId?: string): QuizAttempt[] {
+  static getQuizAttempts(filterId?: string): QuizAttempt[] {
     const attempts = this.getItem<QuizAttempt[]>(STORAGE_KEYS.QUIZ_ATTEMPTS, []);
-    if (quizId) {
-      return attempts.filter((a) => a.quizId === quizId);
+    if (filterId) {
+      return attempts.filter((a) => a.userId === filterId || a.quizId === filterId);
     }
     return attempts;
   }

@@ -38,19 +38,37 @@ const ProgressContext = createContext<ProgressContextType | undefined>(undefined
 
 export const ProgressProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, updateUserStats } = useAuth();
-  const userId = user?.id || 'demo-student';
+  const userId = user?.id || '';
 
-  const [progressList, setProgressList] = useState<LearningProgress[]>(() => LocalDatabase.getProgress(userId));
-  const [activities, setActivities] = useState<LearningActivity[]>(() => LocalDatabase.getActivities(userId));
-  const [userAchievements, setUserAchievements] = useState<UserAchievement[]>(() => LocalDatabase.getUserAchievements(userId));
-  const [circuitAttempts, setCircuitAttempts] = useState<CircuitAttempt[]>(() => LocalDatabase.getCircuitAttempts());
-  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>(() => LocalDatabase.getQuizAttempts());
+  const [progressList, setProgressList] = useState<LearningProgress[]>(() =>
+    user ? LocalDatabase.getProgress(user.id) : []
+  );
+  const [activities, setActivities] = useState<LearningActivity[]>(() =>
+    user ? LocalDatabase.getActivities(user.id) : []
+  );
+  const [userAchievements, setUserAchievements] = useState<UserAchievement[]>(() =>
+    user ? LocalDatabase.getUserAchievements(user.id) : []
+  );
+  const [circuitAttempts, setCircuitAttempts] = useState<CircuitAttempt[]>(() =>
+    user ? LocalDatabase.getCircuitAttempts(user.id) : []
+  );
+  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>(() =>
+    user ? LocalDatabase.getQuizAttempts(user.id) : []
+  );
 
   useEffect(() => {
-    if (user) {
+    if (user && user.id) {
       setProgressList(LocalDatabase.getProgress(user.id));
       setActivities(LocalDatabase.getActivities(user.id));
       setUserAchievements(LocalDatabase.getUserAchievements(user.id));
+      setCircuitAttempts(LocalDatabase.getCircuitAttempts(user.id));
+      setQuizAttempts(LocalDatabase.getQuizAttempts(user.id));
+    } else {
+      setProgressList([]);
+      setActivities([]);
+      setUserAchievements([]);
+      setCircuitAttempts([]);
+      setQuizAttempts([]);
     }
   }, [user]);
 

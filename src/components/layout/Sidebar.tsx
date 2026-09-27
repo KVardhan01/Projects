@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Atom,
   BookOpen,
@@ -12,19 +12,24 @@ import {
   Settings,
   Shield,
   GraduationCap,
-  Sparkles,
   HelpCircle,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { UserRole } from '../../types/user';
 
 export const Sidebar: React.FC = () => {
-  const { role, switchRole, isDemoMode } = useAuth();
+  const navigate = useNavigate();
+  const { user, role, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
 
   const navItems = [
-    { to: '/dashboard', label: 'Dashboard', icon: BarChart3, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
-    { to: '/learn', label: 'Learning Path', icon: BookOpen, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
-    { to: '/lab', label: 'Circuit Lab', icon: FlaskConical, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
+    { to: '/student/dashboard', label: 'Dashboard', icon: BarChart3, roles: ['STUDENT'] },
+    { to: '/learning', label: 'Learning Path', icon: BookOpen, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
+    { to: '/circuit-lab', label: 'Circuit Lab', icon: FlaskConical, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
     { to: '/exercises', label: 'Exercises', icon: CheckSquare, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
     { to: '/reference', label: 'Reference', icon: BookMarked, roles: ['STUDENT', 'INSTRUCTOR', 'ADMIN'] },
     { to: '/progress', label: 'My Progress', icon: BarChart3, roles: ['STUDENT'] },
@@ -33,21 +38,25 @@ export const Sidebar: React.FC = () => {
 
   const instructorItems = [
     { to: '/instructor', label: 'Instructor Overview', icon: GraduationCap },
-    { to: '/instructor/students', label: 'Student Analytics', icon: User },
+    { to: '/instructor/students', label: 'Student Directory', icon: User },
     { to: '/instructor/exercises', label: 'Exercise Builder', icon: CheckSquare },
+    { to: '/instructor/analytics', label: 'Cohort Telemetry', icon: BarChart3 },
   ];
 
   const adminItems = [
     { to: '/admin', label: 'Admin Console', icon: Shield },
     { to: '/admin/users', label: 'User & Roles', icon: User },
-    { to: '/admin/config', label: 'Platform Config', icon: Settings },
+    { to: '/admin/settings', label: 'Platform Settings', icon: Settings },
   ];
+
+  const homePath =
+    role === 'ADMIN' ? '/admin' : role === 'INSTRUCTOR' ? '/instructor' : '/student/dashboard';
 
   return (
     <aside className="w-64 bg-slate-900/90 border-r border-slate-800/80 flex flex-col shrink-0 select-none backdrop-blur-md">
       {/* Brand Header */}
       <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
-        <NavLink to="/dashboard" className="flex items-center gap-3 group">
+        <NavLink to={homePath} className="flex items-center gap-3 group">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-teal-400 flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
             <Atom className="w-5 h-5 text-slate-950 stroke-[2.2]" />
           </div>
@@ -62,31 +71,25 @@ export const Sidebar: React.FC = () => {
         </NavLink>
       </div>
 
-      {/* Role Switcher Toolbar (Crucial for Reviewing Student / Instructor / Admin) */}
-      <div className="px-4 py-2.5 bg-slate-950/60 border-b border-slate-800/60">
-        <div className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider mb-1.5 flex items-center justify-between">
-          <span>Active Role</span>
-          {isDemoMode && (
-            <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1 py-0.2 rounded font-mono">
-              DEMO
-            </span>
-          )}
+      {/* Verified Role Identity Display (Read-Only) */}
+      <div className="px-4 py-2.5 bg-slate-950/40 border-b border-slate-800/60 flex items-center justify-between">
+        <div className="flex items-center gap-2 overflow-hidden">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+          <span className="text-[11px] font-mono text-slate-300 font-medium truncate">
+            {user?.name || 'Verified User'}
+          </span>
         </div>
-        <div className="grid grid-cols-3 gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
-          {(['STUDENT', 'INSTRUCTOR', 'ADMIN'] as UserRole[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => switchRole(r)}
-              className={`text-[10px] font-medium py-1 rounded transition-colors ${
-                role === r
-                  ? 'bg-cyan-500 text-slate-950 font-semibold shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              {r === 'STUDENT' ? 'Student' : r === 'INSTRUCTOR' ? 'Instr' : 'Admin'}
-            </button>
-          ))}
-        </div>
+        <span
+          className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded font-bold border shrink-0 ${
+            role === 'ADMIN'
+              ? 'bg-rose-950/60 text-rose-300 border-rose-800/60'
+              : role === 'INSTRUCTOR'
+              ? 'bg-indigo-950/60 text-indigo-300 border-indigo-800/60'
+              : 'bg-cyan-950/60 text-cyan-300 border-cyan-800/60'
+          }`}
+        >
+          {role}
+        </span>
       </div>
 
       {/* Nav List */}
@@ -181,32 +184,22 @@ export const Sidebar: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* Current Path Widget */}
-        <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-          <div className="text-[10px] text-cyan-400 font-semibold uppercase tracking-wider">
-            Current Learning Path
-          </div>
-          <div className="text-xs font-medium text-slate-200 mt-1 line-clamp-1">
-            Quantum States & Gates
-          </div>
-          <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2.5 overflow-hidden">
-            <div className="bg-gradient-to-r from-cyan-500 to-teal-400 h-full rounded-full w-[45%]" />
-          </div>
-          <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
-            <span>3 of 8 Lessons</span>
-            <span>45%</span>
-          </div>
-        </div>
       </div>
 
-      {/* Footer Info */}
+      {/* Footer Info & Logout */}
       <div className="p-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
         <NavLink to="/reference" className="hover:text-slate-200 flex items-center gap-1">
           <HelpCircle className="w-3.5 h-3.5" />
-          <span>Documentation</span>
+          <span>Reference</span>
         </NavLink>
-        <span className="font-mono text-[10px] text-cyan-500">v2.5</span>
+        <button
+          onClick={handleLogout}
+          className="text-slate-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer transition-colors px-1.5 py-0.5 rounded hover:bg-slate-800/60"
+          title="Sign out of Qubify"
+        >
+          <LogOut className="w-3 h-3 text-rose-400" />
+          <span>Logout</span>
+        </button>
       </div>
     </aside>
   );

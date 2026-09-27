@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LocalDatabase } from '../services/storage/localDatabase';
+import { GoogleSheetsService } from '../services/google/googleSheets';
 import { UserProfile, UserRole } from '../types/user';
 import { Users, Shield, Check, UserCheck, UserX } from 'lucide-react';
 
@@ -12,6 +13,59 @@ export const AdminUsersPage: React.FC = () => {
     }
     return list;
   });
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        if (!GoogleSheetsService.isConfigured()) return;
+        const { headers, rows } = await GoogleSheetsService.readSheet('Users');
+        if (rows.length === 0) return;
+        const headerMap: Record<string, number> = {};
+        headers.forEach((h, idx) => {
+          headerMap[h.trim().toLowerCase()] = idx;
+        });
+        const userIdIdx = headerMap['userid'] ?? 0;
+        const nameIdx = headerMap['name'] ?? 1;
+        const emailIdx = headerMap['email'] ?? 2;
+        const googleIdIdx = headerMap['googleid'] ?? 3;
+        const roleIdx = headerMap['role'] ?? 4;
+        const statusIdx = headerMap['status'] ?? 5;
+        const createdAtIndex = headerMap['createdat'] ?? 6;
+
+        const parsedUsers: UserProfile[] = rows.map((r) => {
+          const rawRole = (r[roleIdx] || '').trim().toUpperCase();
+          const role: UserRole = rawRole === 'ADMIN' ? 'ADMIN' : rawRole === 'INSTRUCTOR' ? 'INSTRUCTOR' : 'STUDENT';
+          const status = (r[statusIdx] || '').trim().toLowerCase();
+          return {
+            id: r[userIdIdx] || `user-${Date.now()}`,
+            googleId: r[googleIdIdx] || '',
+            name: r[nameIdx] || 'Scholar',
+            email: r[emailIdx] || '',
+            photoUrl: '',
+            role,
+            xp: 0,
+            streak: 0,
+            confidence: 0,
+            weeklyGoal: 0,
+            weeklyGoalProgress: 0,
+            currentCourseId: 'quantum-computing-mastery',
+            currentModuleId: 'mod-foundations',
+            currentLessonId: 'lesson-1-what-is-qubit',
+            createdAt: r[createdAtIndex] || new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+            lastActivityAt: new Date().toISOString(),
+            isActive: status === 'active',
+          };
+        });
+        if (parsedUsers.length > 0) {
+          setUsers(parsedUsers);
+        }
+      } catch (err) {
+        // Fallback to local
+      }
+    };
+    fetchUsers();
+  }, []);
 
   const handleRoleChange = (userId: string, newRole: UserRole) => {
     const updated = users.map((u) => (u.id === userId ? { ...u, role: newRole } : u));

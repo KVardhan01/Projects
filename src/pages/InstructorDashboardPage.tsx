@@ -38,7 +38,7 @@ export const InstructorDashboardPage: React.FC = () => {
     ? Math.round(attempts.reduce((sum, a) => sum + (a.score || 0), 0) / attempts.length)
     : 0;
 
-  const [feedbackStudentId, setFeedbackStudentId] = useState(enrolledStudents[0]?.id || 'demo-student');
+  const [feedbackStudentId, setFeedbackStudentId] = useState(enrolledStudents[0]?.id || '');
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSentNotice, setFeedbackSentNotice] = useState(false);
 
@@ -63,11 +63,12 @@ export const InstructorDashboardPage: React.FC = () => {
     e.preventDefault();
     if (!feedbackText.trim()) return;
 
+    const targetStudent = enrolledStudents.find((s) => s.id === feedbackStudentId);
     LocalDatabase.addFeedback({
       studentId: feedbackStudentId,
-      studentName: 'Alex Rivera',
-      instructorId: user?.id || 'inst-1',
-      instructorName: user?.name || 'Dr. Evelyn Vance',
+      studentName: targetStudent?.name || 'Student',
+      instructorId: user?.id || 'instructor',
+      instructorName: user?.name || 'Instructor',
       referenceType: 'exercise',
       referenceId: 'ex-bell-state',
       referenceTitle: 'Bell State |Φ+⟩ Challenge',
@@ -196,8 +197,15 @@ export const InstructorDashboardPage: React.FC = () => {
                 onChange={(e) => setFeedbackStudentId(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200"
               >
-                <option value="demo-student">Alex Rivera (alex.quantum@example.edu)</option>
-                <option value="student-2">Jordan Lee (jordan.lee@example.edu)</option>
+                {enrolledStudents.length === 0 ? (
+                  <option value="">No enrolled students</option>
+                ) : (
+                  enrolledStudents.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name} ({st.email})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

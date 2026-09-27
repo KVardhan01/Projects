@@ -1,9 +1,11 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
+import { GoogleSheetsService } from '../services/google/googleSheets';
 import { User, Award, Flame, Zap, Shield, Mail, Calendar, Database } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
-  const { user, role, isDemoMode } = useAuth();
+  const { user, role } = useAuth();
+  const sheetsConnected = GoogleSheetsService.isConfigured();
 
   if (!user) return null;
 
@@ -12,7 +14,10 @@ export const ProfilePage: React.FC = () => {
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl backdrop-blur-md">
         <div className="flex items-center gap-4">
           <img
-            src={user.photoUrl}
+            src={
+              user.photoUrl ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0891b2&color=fff`
+            }
             alt={user.name}
             className="w-16 h-16 rounded-2xl border-2 border-cyan-500/40 object-cover shadow-lg"
           />
@@ -45,8 +50,8 @@ export const ProfilePage: React.FC = () => {
 
           <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
             <span className="text-slate-400 block mb-1 text-[10px]">DATA PERSISTENCE:</span>
-            <span className={isDemoMode ? 'text-amber-400' : 'text-emerald-400'}>
-              {isDemoMode ? 'LocalStorage (Demo Mode)' : 'Google Sheets v4 API'}
+            <span className={sheetsConnected ? 'text-emerald-400 font-bold' : 'text-slate-300'}>
+              {sheetsConnected ? 'Google Sheets v4 API' : 'Relational Directory Store'}
             </span>
           </div>
 

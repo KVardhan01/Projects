@@ -42,9 +42,10 @@ export const DashboardPage: React.FC = () => {
 
   const totalXp = user?.xp ?? 0;
   const dailyStreak = user?.streak ?? 0;
-  const weeklyGoalMinutes = user?.weeklyGoal || 60;
+  const weeklyGoalMinutes = user?.weeklyGoal ?? 0;
   const weeklyGoalProgress = user?.weeklyGoalProgress ?? 0;
-  const weeklyGoalPercent = Math.min(100, Math.round((weeklyGoalProgress / weeklyGoalMinutes) * 100));
+  const weeklyGoalPercent =
+    weeklyGoalMinutes > 0 ? Math.min(100, Math.round((weeklyGoalProgress / weeklyGoalMinutes) * 100)) : 0;
 
   // Determine actual next lesson milestone based on real completion state
   const nextLesson =
@@ -126,19 +127,35 @@ export const DashboardPage: React.FC = () => {
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 mb-1">
-              Qubify
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">
+                Qubify
+              </span>
+              <span
+                className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold border ${
+                  user?.role === 'ADMIN'
+                    ? 'bg-rose-950/60 text-rose-300 border-rose-800/60'
+                    : user?.role === 'INSTRUCTOR'
+                    ? 'bg-indigo-950/60 text-indigo-300 border-indigo-800/60'
+                    : 'bg-cyan-950/60 text-cyan-300 border-cyan-800/60'
+                }`}
+              >
+                {user?.role || 'STUDENT'}
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-100 tracking-tight">
-              Welcome back, {user?.name.split(' ')[0] || 'Scholar'}!
+              Welcome back, {user?.name || 'Scholar'}!
             </h1>
-            <p className="text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+            <p className="text-xs text-slate-400 font-mono mt-0.5">
+              {user?.email}
+            </p>
+            <p className="text-sm text-slate-300 mt-2 max-w-2xl leading-relaxed">
               Continue your journey through quantum states, reversible logic, and algorithm synthesis.
             </p>
           </div>
 
           <Link
-            to="/lab"
+            to="/circuit-lab"
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all cursor-pointer self-start sm:self-center"
           >
             <FlaskConical className="w-4 h-4" />
@@ -338,7 +355,7 @@ export const DashboardPage: React.FC = () => {
                 Continue Learning
               </h3>
               <Link
-                to="/learn"
+                to="/learning"
                 className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium"
               >
                 <span>View Full Path</span>
@@ -360,7 +377,7 @@ export const DashboardPage: React.FC = () => {
               </div>
 
               <Link
-                to={`/learn/${nextLesson.moduleId}/${nextLesson.id}`}
+                to={`/learning/${nextLesson.moduleId}/${nextLesson.id}`}
                 className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow"
               >
                 <span>{completedCount === 0 ? 'Start First Lesson' : 'Resume Lesson'}</span>
@@ -393,7 +410,7 @@ export const DashboardPage: React.FC = () => {
                   </div>
 
                   <Link
-                    to="/lab"
+                    to="/circuit-lab"
                     onClick={() => resetToModel(exp.circuit as any)}
                     className="mt-4 py-1.5 rounded-lg bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-200 text-xs font-medium text-center transition-all flex items-center justify-center gap-1"
                   >

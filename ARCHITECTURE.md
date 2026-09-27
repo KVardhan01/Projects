@@ -6,7 +6,7 @@
 - **Client-Side Quantum Simulation**: Circuit execution, state vector linear algebra, and Bloch sphere math run directly in TypeScript.
 - **Persistent Storage via Google Sheets API v4**: Relational schema stored in 19 dedicated spreadsheet tabs using browser OAuth 2.0 bearer tokens.
 - **AI Tutoring & Augmentation via Gemini**: Injects real circuit state, gates, error margins, and student history into context for intelligent feedback.
-- **Decoupled Local Demo Mode**: When Google credentials are unconfigured or offline, the platform seamlessly uses a mirror LocalStorage persistence store.
+- **Google Sheets Users Directory**: User verification and role-based access control (Student, Instructor, Admin) are strictly driven by the Google Sheets Users tab.
 
 ## 2. Data Flow
 
@@ -19,7 +19,7 @@
       │
       ├──> [Browser Quantum Engine] ─────> [State Vector + Bloch Sphere + Probabilities]
       │
-      └──> [LocalStorage Database] ──────> [Offline Drafts & Demo Cache]
+      └──> [Browser Storage Cache] ───────> [Circuits & Client Settings]
 ```
 
 ## 3. Core Modules

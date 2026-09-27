@@ -1,4 +1,4 @@
-import { UserProfile, UserRole } from '../../types/user';
+import { UserProfile } from '../../types/user';
 
 declare global {
   interface Window {
@@ -6,35 +6,38 @@ declare global {
   }
 }
 
-export interface GoogleAuthConfig {
-  clientId: string;
-  sheetsId?: string;
-}
-
 export class GoogleAuthService {
   private static clientId: string =
     import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-  private static tokenClient: any = null;
   private static cachedToken: string | null = null;
   private static tokenExpiresAt: number = 0;
 
-  static init(): void {
-    if (typeof window === 'undefined') return;
-    if (this.clientId && window.google?.accounts?.oauth2) {
-      try {
-        this.tokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: this.clientId,
-          scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-          callback: () => {}, // overridden per request
-        });
-      } catch (err) {
-        console.warn('Google Identity Services init deferred:', err);
+  static getClientId(): string {
+    if (this.clientId && this.clientId.trim().length > 5) {
+      return this.clientId.trim();
+    }
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('qubify_google_client_id');
+      if (stored && stored.trim().length > 5) {
+        return stored.trim();
       }
+    }
+    return '';
+  }
+
+  static setClientId(id: string): void {
+    this.clientId = id.trim();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qubify_google_client_id', id.trim());
     }
   }
 
   static isConfigured(): boolean {
-    return Boolean(this.clientId && this.clientId.trim().length > 5);
+    return Boolean(this.getClientId().length > 5);
+  }
+
+  static init(): void {
+    // Client initialization deferred to request time
   }
 
   static getCachedAccessToken(): string | null {
@@ -50,27 +53,28 @@ export class GoogleAuthService {
     }
 
     if (!window.google?.accounts?.oauth2) {
-      throw new Error('Google Identity Services SDK is not loaded. Please check your network or use Demo Mode.');
+      throw new Error('Google Identity Services SDK is loading. Please try again in a moment.');
     }
 
-    if (!this.clientId) {
+    const activeClientId = this.getClientId();
+    if (!activeClientId) {
       throw new Error(
-        'Google authentication is not configured yet because the final deployment URL has not been decided. Keep authentication in development/demo mode and allow the application to run without VITE_GOOGLE_CLIENT_ID.'
+        'Google OAuth Client ID is not configured yet. Please configure your Client ID or use the development authentication below.'
       );
     }
 
     return new Promise((resolve, reject) => {
       try {
         const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: this.clientId,
-          scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+          client_id: activeClientId,
+          scope:
+            'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
           callback: (response: any) => {
             if (response.error) {
               reject(new Error(response.error_description || response.error));
               return;
             }
             this.cachedToken = response.access_token;
-            // Token usually expires in 3600 seconds, add buffer of 60 seconds
             this.tokenExpiresAt = Date.now() + (parseInt(response.expires_in, 10) - 60) * 1000;
             resolve(response.access_token);
           },
@@ -98,39 +102,13 @@ export class GoogleAuthService {
     };
   }
 
-  static createMockUser(role: UserRole = 'STUDENT'): UserProfile {
-    const roleTitles: Record<UserRole, { name: string; email: string }> = {
-      STUDENT: { name: 'Alex Rivera (Demo Student)', email: 'alex.quantum@example.edu' },
-      INSTRUCTOR: { name: 'Dr. Evelyn Vance (Demo Instructor)', email: 'e.vance@quantumlab.edu' },
-      ADMIN: { name: 'Dr. Marcus Sterling (Demo Admin)', email: 'admin@quantumlab.io' },
-    };
-
-    const details = roleTitles[role];
-    return {
-      id: `user-demo-${role.toLowerCase()}`,
-      googleId: `google-mock-${role.toLowerCase()}`,
-      name: details.name,
-      email: details.email,
-      photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-      role,
-      xp: 0,
-      streak: 0,
-      confidence: 0,
-      weeklyGoal: 60,
-      weeklyGoalProgress: 0,
-      currentCourseId: 'quantum-computing-mastery',
-      currentModuleId: 'mod-foundations',
-      currentLessonId: 'lesson-1-what-is-qubit',
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-      isActive: true,
-    };
-  }
-
   static signOut(): void {
     if (this.cachedToken && window.google?.accounts?.oauth2) {
-      window.google.accounts.oauth2.revoke(this.cachedToken, () => {});
+      try {
+        window.google.accounts.oauth2.revoke(this.cachedToken, () => {});
+      } catch {
+        // ignore
+      }
     }
     this.cachedToken = null;
     this.tokenExpiresAt = 0;

@@ -26,6 +26,5 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   accessToken: string | null;
-  isDemoMode: boolean;
   error: string | null;
 }
