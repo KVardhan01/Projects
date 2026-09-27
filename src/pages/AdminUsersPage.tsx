@@ -26,8 +26,8 @@ export const AdminUsersPage: React.FC = () => {
         });
         const userIdIdx = headerMap['userid'] ?? 0;
         const nameIdx = headerMap['name'] ?? 1;
-        const emailIdx = headerMap['email'] ?? 2;
-        const googleIdIdx = headerMap['googleid'] ?? 3;
+        const usernameIdx = headerMap['username'] ?? 2;
+        const passwordIdx = headerMap['password'] ?? 3;
         const roleIdx = headerMap['role'] ?? 4;
         const statusIdx = headerMap['status'] ?? 5;
         const createdAtIndex = headerMap['createdat'] ?? 6;
@@ -36,13 +36,15 @@ export const AdminUsersPage: React.FC = () => {
           const rawRole = (r[roleIdx] || '').trim().toUpperCase();
           const role: UserRole = rawRole === 'ADMIN' ? 'ADMIN' : rawRole === 'INSTRUCTOR' ? 'INSTRUCTOR' : 'STUDENT';
           const status = (r[statusIdx] || '').trim().toLowerCase();
+          const username = (r[usernameIdx] || '').trim();
           return {
             id: r[userIdIdx] || `user-${Date.now()}`,
-            googleId: r[googleIdIdx] || '',
+            username,
             name: r[nameIdx] || 'Scholar',
-            email: r[emailIdx] || '',
+            email: `${username || r[nameIdx]?.toLowerCase()}@qubify.edu`,
             photoUrl: '',
             role,
+            status: status === 'active' ? 'Active' : 'Inactive',
             xp: 0,
             streak: 0,
             confidence: 0,
@@ -128,7 +130,7 @@ export const AdminUsersPage: React.FC = () => {
                   <tr key={u.id} className="hover:bg-slate-850/50 transition-colors">
                   <td className="py-3 px-4">
                     <div className="font-bold text-slate-200">{u.name}</div>
-                    <div className="text-[11px] text-slate-400 font-sans">{u.email}</div>
+                    <div className="text-[11px] text-cyan-400 font-mono">@{u.username || u.id}</div>
                   </td>
                   <td className="py-3 px-4">
                     <select

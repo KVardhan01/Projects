@@ -2,11 +2,13 @@ export type UserRole = 'STUDENT' | 'INSTRUCTOR' | 'ADMIN';
 
 export interface UserProfile {
   id: string;
-  googleId: string;
+  username?: string;
+  googleId?: string;
   name: string;
   email: string;
   photoUrl: string;
   role: UserRole;
+  status?: 'Active' | 'Inactive';
   xp: number;
   streak: number;
   confidence: number; // 0 - 100

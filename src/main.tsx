@@ -15,6 +15,7 @@ try {
   localStorage.removeItem('user');
   localStorage.removeItem('currentUser');
   localStorage.removeItem('role');
+  localStorage.removeItem('qubify_google_client_id');
 } catch {
   // ignore
 }

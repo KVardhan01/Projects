@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LocalDatabase } from '../services/storage/localDatabase';
+import { UsersSheetService } from '../services/auth/usersSheetService';
 import { CircuitAttempt } from '../types/exercise';
 import { Users, Eye, CheckCircle2, AlertCircle, Award, Code2, Layers } from 'lucide-react';
 
@@ -7,19 +8,19 @@ export const InstructorStudentsPage: React.FC = () => {
   const attempts = LocalDatabase.getCircuitAttempts();
   const [selectedAttempt, setSelectedAttempt] = useState<CircuitAttempt | null>(null);
 
-  const registeredUsers = LocalDatabase.getUsers();
+  const registeredUsers = UsersSheetService.getUsers();
   const studentUsers = registeredUsers.filter((u) => u.role === 'STUDENT');
   const students = studentUsers.map((u) => {
-    const userProgress = LocalDatabase.getProgress(u.id);
+    const userProgress = LocalDatabase.getProgress(u.userId);
     const completed = userProgress.filter((p) => p.status === 'COMPLETED').length;
-    const userAttempts = attempts.filter((a) => a.userId === u.id);
+    const userAttempts = attempts.filter((a) => a.userId === u.userId);
     return {
-      id: u.id,
+      id: u.userId,
       name: u.name,
-      email: u.email,
-      xp: u.xp || 0,
-      streak: u.streak || 0,
-      confidence: u.confidence || 0,
+      email: `${u.username}@qubify.edu`,
+      xp: 0,
+      streak: 0,
+      confidence: 0,
       completedLessons: completed,
       attemptsCount: userAttempts.length,
     };

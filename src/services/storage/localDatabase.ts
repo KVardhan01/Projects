@@ -65,7 +65,8 @@ export class LocalDatabase {
       users.find(
         (u) =>
           u.email.toLowerCase() === clean ||
-          u.googleId.toLowerCase() === clean ||
+          (u.username && u.username.toLowerCase() === clean) ||
+          (u.googleId && u.googleId.toLowerCase() === clean) ||
           u.id.toLowerCase() === clean
       ) || null
     );
@@ -73,7 +74,12 @@ export class LocalDatabase {
 
   static saveUser(user: UserProfile): void {
     const users = this.getUsers();
-    const idx = users.findIndex((u) => u.id === user.id || u.googleId === user.googleId || u.email.toLowerCase() === user.email.toLowerCase());
+    const idx = users.findIndex(
+      (u) =>
+        u.id === user.id ||
+        (u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase()) ||
+        u.email.toLowerCase() === user.email.toLowerCase()
+    );
     if (idx >= 0) {
       users[idx] = user;
     } else {
