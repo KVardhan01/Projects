@@ -22,11 +22,19 @@ export class GeminiService {
 You are an expert quantum physicist and quantum computing software engineer.
 Your persona is encouraging, precise, mathematically grounded yet intuitive.
 
-CURRENT STUDENT CONTEXT:
+CRITICAL QUANTUM CODE DIRECTIVE:
+All user-facing code MUST BE PYTHON + QISKIT ONLY.
+NEVER generate TypeScript, JavaScript, JSX, or any other programming language as quantum code.
+Always format quantum circuits using standard Python Qiskit:
+\`\`\`python
+from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(...)
+...
+\`\`\`
+
+CURRENT STUDENT WORKBENCH CONTEXT:
 - Student Level: ${context.studentLevel || 'Beginner'}
-- Current Lesson: ${context.lessonTitle || 'Interactive Quantum Workbench'}
-- Module: ${context.moduleTitle || 'General Lab'}
-- Exercise Goal: ${context.exerciseGoal || 'Free experimentation'}
 - Active Circuit: ${
       context.circuit
         ? `${context.circuit.numQubits} qubits, gates: [${context.circuit.operations
@@ -34,7 +42,7 @@ CURRENT STUDENT CONTEXT:
             .join(', ')}]`
         : 'None'
     }
-- Generated Qiskit Code:
+- Generated Python/Qiskit Code:
 \`\`\`python
 ${context.code || '# None'}
 \`\`\`
@@ -43,22 +51,21 @@ ${context.code || '# None'}
         ? JSON.stringify(context.simulation.probabilities)
         : 'Not yet simulated'
     }
-- Recent Student Mistakes: ${
-      context.recentMistakes && context.recentMistakes.length > 0
-        ? context.recentMistakes.join('; ')
-        : 'None recorded'
+- Simulation Error / Unsupported Operation (if any): ${
+      context.simulationError || 'No active simulation errors'
     }
+- Exercise Goal: ${context.exerciseGoal || 'Free experimentation'}
 
 GUIDELINES:
 1. Explain quantum concepts using clear physical intuition before equations.
 2. When answering why a circuit produced a result, inspect the ACTIVE CIRCUIT and PROBABILITIES provided above!
-3. For debugging: detail (1) What happened, (2) Why it happened physically, and (3) What specific gate or moment to adjust.
-4. For progressive hints: do not give away the whole solution on hint 1. Provide an conceptual nudge first.
-5. If asked to generate Qiskit code, provide clean, valid Qiskit code inside \`\`\`python ... \`\`\` code blocks.`;
+3. If the user asks "Fix my code" or reports a simulation error, diagnose the issue, explain what was wrong, and output the complete corrected Python/Qiskit code in a \`\`\`python ... \`\`\` code block.
+4. For progressive hints: do not give away the whole solution on hint 1. Provide a conceptual nudge first.
+5. Emphasize standard Qiskit methods: qc.h(), qc.x(), qc.y(), qc.z(), qc.s(), qc.t(), qc.cx(), qc.cnot(), qc.swap(), qc.measure(), qc.measure_all().`;
 
     if (this.isAvailable()) {
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.apiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${this.apiKey}`;
         const contents = [
           {
             role: 'user',
@@ -82,122 +89,199 @@ GUIDELINES:
       }
     }
 
-    // High-fidelity Built-In Quantum Expert Engine (ensures zero fake delays or broken UI)
+    // High-fidelity Built-In Quantum Expert Engine
     return this.generateExpertFallback(userPrompt, context);
   }
 
   /**
-   * Comprehensive built-in Quantum Expert System tailored to the user's active circuit and question.
+   * Comprehensive built-in Quantum Expert System tailored to the active circuit, Python code, and simulation results/errors.
    */
   private static generateExpertFallback(userPrompt: string, context: AIContext): string {
     const p = userPrompt.toLowerCase();
     const ops = context.circuit?.operations || [];
+    const numQubits = context.circuit?.numQubits || 2;
     const probs = context.simulation?.probabilities || {};
+    const hasError = Boolean(context.simulationError);
 
-    if (p.includes('superposition') || p.includes('hadamard') || p.includes('h gate')) {
-      return `**Superposition & The Hadamard Gate:**
+    // Handling "Fix my code" or Error diagnosis
+    if (p.includes('fix') || p.includes('error') || p.includes('broken') || p.includes('debug') || hasError) {
+      if (context.simulationError) {
+        return `**Quantum Diagnostic Report & Code Fix:**
 
-When you apply the **Hadamard (H)** gate to a qubit in ground state $|0\\rangle$, it creates an equal superposition:
-$$|\\psi\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}} = |+\\rangle$$
+**Identified Issue:**
+${context.simulationError}
 
-This means the qubit is in a linear combination of both states simultaneously with probability amplitudes $\\alpha = 1/\\sqrt{2}$ and $\\beta = 1/\\sqrt{2}$. Measuring this state collapses it to $0$ with $50\\%$ probability and $1$ with $50\\%$ probability.
+**Physically & Syntactically:**
+Quantum operations must use supported gates with valid wire indices within the allocated circuit width (currently **${numQubits} qubit(s)**).
 
-*Tip for your circuit:* ${
-        ops.some((o) => o.gate === 'H')
-          ? 'Your circuit already contains Hadamard gates! Check the probability chart below to see the 50/50 balance.'
-          : 'Drag an H gate from the palette onto qubit q0 to observe superposition firsthand.'
-      }`;
-    }
-
-    if (p.includes('bell state') || p.includes('entangle')) {
-      return `**Creating a Bell State (|Φ⁺⟩):**
-
-A Bell state represents maximal bipartite quantum entanglement. The canonical recipe:
-1. Apply **H** to qubit **q0**: creates $(|0\\rangle + |1\\rangle)/\\sqrt{2} \\otimes |0\\rangle = (|00\\rangle + |10\\rangle)/\\sqrt{2}$.
-2. Apply **CNOT (CX)** with control **q0** and target **q1**: flips the second qubit if the first is $1$, yielding:
-$$|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$$
-
-*Your Circuit Status:* ${
-        ops.some((o) => o.gate === 'H') && ops.some((o) => o.gate === 'CX')
-          ? 'Your circuit matches the Bell state structure! Notice how only |00⟩ and |11⟩ are observed.'
-          : 'To construct this, place an H on q0 at moment 0, then a CX with control q0 and target q1 at moment 1.'
-      }`;
-    }
-
-    if (p.includes('why') && (p.includes('result') || p.includes('wrong') || p.includes('01') || p.includes('10'))) {
-      const probKeys = Object.keys(probs);
-      return `**Circuit Analysis & Debugging Report:**
-
-1. **What Happened:**
-   Your current simulation evaluated across basis states: ${
-     probKeys.length > 0
-       ? probKeys.map((k) => `|${k}⟩: ${(probs[k] * 100).toFixed(1)}%`).join(', ')
-       : 'No simulation recorded yet.'
-   }.
-
-2. **Why It Happened:**
-   The circuit currently has ${ops.length} gate(s). In quantum circuits, each gate is a unitary transformation acting sequentially by moment. ${
-        ops.some((o) => o.gate === 'CX')
-          ? 'The CNOT operation conditionally transformed target amplitudes based on control qubit superposition.'
-          : 'Without entangling gates, qubits evolve independently as tensor products of single-qubit states.'
-      }
-
-3. **What to Try Next:**
-   - If you intended to isolate a specific state, check whether Pauli-X or phase rotations are needed before measurement.
-   - Click **Simulate** again with 1024 shots to inspect measurement variance.`;
-    }
-
-    if (p.includes('hint') || p.includes('give me a hint')) {
-      return `**Progressive Hint:**
-
-💡 **Conceptual Guide:**
-- Think about the basis states you want to reach.
-- Look at the required initial state vs your target output probabilities.
-- Remember: **H** creates superposition, **X** flips bits, and **CNOT** establishes entanglement between wires!`;
-    }
-
-    if (p.includes('simplify') || p.includes('optimize')) {
-      return `**Circuit Optimization Suggestion:**
-
-Looking at your active operations:
-- Every Hermitian gate satisfies $U^2 = I$. For example, $H \\cdot H = I$, $X \\cdot X = I$, and $Z \\cdot Z = I$.
-- If you have consecutive identical Pauli or Hadamard gates on the same wire without intervening controls, they cancel out completely.
-- Gate depth can be reduced by placing independent single-qubit operations at the same moment index.`;
-    }
-
-    if (p.includes('qiskit') || p.includes('code')) {
-      return `**Qiskit Python Code Explanation:**
-
-Here is the Python implementation corresponding to your current circuit:
+Here is the corrected Python / Qiskit code:
 \`\`\`python
 from qiskit import QuantumCircuit
 
-qc = QuantumCircuit(${context.circuit?.numQubits || 2})
-${context.code || '# Add gates to visualize Python code'}
-qc.measure_all()
+qc = QuantumCircuit(${Math.max(1, numQubits)})
+
+# Applying standard gates
+qc.h(0)
+${numQubits > 1 ? 'qc.cx(0, 1)' : 'qc.x(0)'}
 \`\`\`
 
-To execute this on IBM Quantum or Qiskit Aer, you would submit this circuit to a sampler primitive:
+You can click **"Apply to Visual Circuit"** below to immediately update both the visual canvas and simulator.`;
+      }
+
+      // Check if user is trying to build Bell state or superposition
+      if (ops.length === 0) {
+        return `**Code Assistance:**
+Your current circuit is empty. Here is a valid, foundational Python/Qiskit circuit that prepares an entangled Bell state $|\\Phi^+\\rangle$:
+
 \`\`\`python
-from qiskit.primitives import StatevectorSampler
-sampler = StatevectorSampler()
-job = sampler.run([qc], shots=1024)
-result = job.result()
+from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(2)
+
+qc.h(0)
+qc.cx(0, 1)
+\`\`\`
+
+Click **"Apply to Visual Circuit"** to load this into your workspace.`;
+      }
+
+      // General fix
+      return `**Code Review & Recommended Fix:**
+Looking at your current Qiskit code:
+\`\`\`python
+${context.code || '# Current circuit'}
+\`\`\`
+
+Your circuit contains **${numQubits} qubits** and **${ops.length} gates**. To ensure reliable execution and balanced basis transformation, verify that all target and control wires are within $0$ to $${numQubits - 1}$.
+
+Here is the clean Qiskit code:
+\`\`\`python
+from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(${numQubits})
+
+${ops
+  .map((o) => {
+    if (o.gate === 'CX' && o.controls.length > 0) return `qc.cx(${o.controls[0]}, ${o.targets[0]})`;
+    if (o.gate === 'SWAP' && o.targets.length > 1) return `qc.swap(${o.targets[0]}, ${o.targets[1]})`;
+    if (o.gate === 'M') return `qc.measure(${o.targets[0]}, ${o.targets[0]})`;
+    return `qc.${o.gate.toLowerCase()}(${o.targets[0]})`;
+  })
+  .join('\n')}
+\`\`\`
+
+Click **"Apply to Visual Circuit"** to synchronize.`;
+    }
+
+    // "What does this H gate do?"
+    if (p.includes('what does this h gate do') || p.includes('h gate') || p.includes('hadamard')) {
+      return `**The Hadamard (H) Gate:**
+
+The Hadamard gate is the primary mechanism for creating quantum superposition from a computational basis state:
+$$H|0\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}} = |+\\rangle$$
+$$H|1\\rangle = \\frac{|0\\rangle - |1\\rangle}{\\sqrt{2}} = |-\\rangle$$
+
+**In your circuit:**
+${
+  ops.some((o) => o.gate === 'H')
+    ? 'You have placed an **H gate** in your circuit. Notice how the probabilities distribute across basis states with equal magnitude ($50\\%$ for each basis outcome when applied to $|0\\rangle$).'
+    : 'You do not have an H gate placed yet. Try dragging **H** onto qubit **q0** or typing `qc.h(0)` in the Python code editor.'
+}`;
+    }
+
+    // "Why is my Bell state incorrect?" or "Why is my CNOT not working?"
+    if (p.includes('bell state') || p.includes('cnot') || p.includes('cx')) {
+      const hasHOn0 = ops.some((o) => o.gate === 'H' && o.targets.includes(0));
+      const hasCX = ops.some((o) => o.gate === 'CX' && o.controls.includes(0) && o.targets.includes(1));
+
+      return `**Bell State (|Φ⁺⟩) & CNOT Analysis:**
+
+To generate the maximally entangled Bell state $|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$:
+1. **Hadamard on q0** creates: $(|0\\rangle + |1\\rangle)/\\sqrt{2} \\otimes |0\\rangle = \\frac{|00\\rangle + |10\\rangle}{\\sqrt{2}}$.
+2. **CNOT with control q0 and target q1** flips q1 when q0 is $1$, yielding:
+$$\\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$$
+
+**Circuit Check:**
+- H on q0: ${hasHOn0 ? '✅ Present' : '❌ Missing (add `qc.h(0)`)'}
+- CNOT (control 0, target 1): ${hasCX ? '✅ Present' : '❌ Missing (add `qc.cx(0, 1)`)'}
+
+Here is the exact Python/Qiskit code:
+\`\`\`python
+from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(2)
+
+qc.h(0)
+qc.cx(0, 1)
 \`\`\``;
     }
 
-    return `Hello! I am your AI Quantum Study Companion.
+    // "Why am I getting this result?"
+    if (p.includes('why') && (p.includes('result') || p.includes('probability') || p.includes('outcome'))) {
+      const probKeys = Object.keys(probs);
+      return `**Circuit Outcome Explanation:**
 
-I am analyzing your active circuit (${context.circuit?.numQubits || 1} qubits, ${
-      ops.length
-    } operations) and current lesson (${context.lessonTitle || 'Quantum Lab'}).
+1. **Active Basis States:**
+   ${
+     probKeys.length > 0
+       ? probKeys.map((k) => `• $|${k}\\rangle$: ${(probs[k] * 100).toFixed(1)}% probability`).join('\n   ')
+       : 'No simulation recorded yet. Click **Simulate Circuit** to compute quantum states.'
+   }
+
+2. **Physical Mechanism:**
+   Your circuit consists of ${ops.length} sequential operations. Quantum state evolution is unitary:
+   $$|\\psi_{\\text{final}}\\rangle = U_k \\dots U_2 U_1 |00\\dots0\\rangle$$
+
+3. **Wire-by-Wire Flow:**
+${ops.map((o, idx) => `   - Step ${idx + 1}: ${o.gate} applied to target wire(s) [${o.targets.join(', ')}]${o.controls.length > 0 ? ` with control [${o.controls.join(', ')}]` : ''}`).join('\n')}
+
+Click **Simulate Circuit** to observe measurement sampling counts.`;
+    }
+
+    // "Explain this circuit."
+    if (p.includes('explain') || p.includes('what is this circuit') || p.includes('overview')) {
+      return `**Quantum Circuit Overview:**
+
+- **Register Width:** ${numQubits} Qubit(s)
+- **Gate Count:** ${ops.length} Operation(s)
+- **Python / Qiskit Code:**
+\`\`\`python
+${context.code || '# Empty circuit'}
+\`\`\`
+
+**Functionality:**
+${
+  ops.length === 0
+    ? 'The circuit currently has no gates. All qubits remain in the ground state $|0\\rangle$.'
+    : `This circuit sequentially applies ${ops.map((o) => o.gate).join(' → ')}. Check the State Vector and Probabilities panels below to see the resulting complex amplitudes and measurement distributions.`
+}`;
+    }
+
+    // "If I change this gate, what happens?"
+    if (p.includes('change') || p.includes('what happens if') || p.includes('replace')) {
+      return `**Quantum Transformation Impact:**
+
+In quantum computing, every single-qubit gate rotates the state vector on the **Bloch Sphere**:
+- Replacing **H** with **X**: Changes a balanced superposition $|+\\rangle$ into a deterministic state $|1\\rangle$.
+- Adding **Z** after **H**: Flips the relative phase, transforming $|+\\rangle = \\frac{|0\\rangle+|1\\rangle}{\\sqrt{2}}$ into $|-\\rangle = \\frac{|0\\rangle-|1\\rangle}{\\sqrt{2}}$.
+- Removing **CNOT**: Destroys quantum entanglement, causing the qubits to factorize back into separable, independent states.
+
+Try modifying the gate in the visual circuit or edit the Python code to immediately watch the Bloch sphere and state vector update!`;
+    }
+
+    // Default response
+    return `Hello! I am your **AI Quantum Study Companion**.
+
+I am monitoring your circuit (**${numQubits} qubits**, **${ops.length} operations**) in real-time.
 
 You can ask me:
-- **"What is superposition?"**
-- **"Why did my circuit produce this result?"**
-- **"Explain the X and H gates."**
-- **"Give me a hint for this challenge."**
-- **"Can this circuit be simplified?"**
-- **"Show me the Qiskit code for a Bell State."**`;
+- **"Explain this circuit."**
+- **"Why am I getting this result?"**
+- **"What does this H gate do?"**
+- **"Why is my Bell state incorrect?"**
+- **"Fix my code."**
+- **"If I change this gate, what happens?"**
+
+Feel free to ask any question or click a suggested topic below!`;
   }
 }

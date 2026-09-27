@@ -19,6 +19,7 @@ export interface AIContext {
   circuit?: CircuitModel;
   code?: string;
   simulation?: Partial<SimulationResult>;
+  simulationError?: string;
   exerciseGoal?: string;
   studentLevel?: 'beginner' | 'intermediate' | 'advanced';
   recentMistakes?: string[];

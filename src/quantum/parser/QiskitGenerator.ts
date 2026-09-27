@@ -3,22 +3,24 @@ import { CircuitModel } from '../../types/quantum';
 export class QiskitGenerator {
   /**
    * Generates standard Python Qiskit code from the internal CircuitModel.
+   * User-facing quantum code must be clean Python + Qiskit only.
    */
   static generate(circuit: CircuitModel): string {
     const lines: string[] = [];
 
-    lines.push('# ========================================================');
-    lines.push('# QUBIFY - QISKIT CODE GENERATOR');
-    lines.push(`# Circuit: ${circuit.name || 'Untitled Circuit'}`);
-    lines.push(`# Qubits: ${circuit.numQubits}, Moments: ${circuit.numMoments}`);
-    lines.push('# ========================================================');
-    lines.push('');
     lines.push('from qiskit import QuantumCircuit');
     lines.push('');
 
     // Check if measurement gates exist
-    const hasMeasurements = circuit.operations.some((op) => op.gate === 'M');
-    if (hasMeasurements) {
+    const measurementOps = circuit.operations.filter((op) => op.gate === 'M');
+    const hasMeasurements = measurementOps.length > 0;
+    const isMeasureAll =
+      hasMeasurements &&
+      circuit.numQubits > 1 &&
+      measurementOps.length === circuit.numQubits &&
+      measurementOps.every((op, idx) => op.targets[0] === idx);
+
+    if (hasMeasurements && !isMeasureAll) {
       lines.push(`qc = QuantumCircuit(${circuit.numQubits}, ${circuit.numQubits})`);
     } else {
       lines.push(`qc = QuantumCircuit(${circuit.numQubits})`);
@@ -26,30 +28,21 @@ export class QiskitGenerator {
     lines.push('');
 
     // Handle initial state preparation if any qubit is initialized to |1>
-    let hasInitialized = false;
     for (const q of circuit.qubits) {
       if (q.initialValue === 1) {
-        if (!hasInitialized) {
-          lines.push('# Initial state preparation');
-          hasInitialized = true;
-        }
-        lines.push(`qc.x(${q.index})  # initialize ${q.name} to |1>`);
+        lines.push(`qc.x(${q.index})`);
       }
     }
-    if (hasInitialized) lines.push('');
 
-    // Sort operations by moment
-    const sortedOps = [...circuit.operations].sort((a, b) => a.moment - b.moment);
-
-    // Group by moment for clean commenting
-    let currentMoment = -1;
+    // Sort operations by moment, then by target qubit
+    const sortedOps = [...circuit.operations].sort((a, b) => {
+      if (a.moment !== b.moment) return a.moment - b.moment;
+      const targetA = a.targets[0] ?? 0;
+      const targetB = b.targets[0] ?? 0;
+      return targetA - targetB;
+    });
 
     for (const op of sortedOps) {
-      if (op.moment !== currentMoment) {
-        currentMoment = op.moment;
-        lines.push(`# Moment ${currentMoment}`);
-      }
-
       switch (op.gate) {
         case 'H':
           lines.push(`qc.h(${op.targets[0]})`);
@@ -80,7 +73,9 @@ export class QiskitGenerator {
           }
           break;
         case 'M':
-          lines.push(`qc.measure(${op.targets[0]}, ${op.targets[0]})`);
+          if (!isMeasureAll) {
+            lines.push(`qc.measure(${op.targets[0]}, ${op.targets[0]})`);
+          }
           break;
         case 'U':
           lines.push(`# Custom Unitary U on qubit ${op.targets[0]}`);
@@ -88,9 +83,7 @@ export class QiskitGenerator {
       }
     }
 
-    if (!hasMeasurements && circuit.operations.length > 0) {
-      lines.push('');
-      lines.push('# Measurement across all computational wires');
+    if (isMeasureAll) {
       lines.push('qc.measure_all()');
     }
 

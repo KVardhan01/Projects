@@ -41,6 +41,8 @@ interface QuantumContextType {
   canRedo: boolean;
   validationErrors: string[];
   qiskitWarnings: string[];
+  simulationError: string | null;
+  syncSource: 'visual' | 'code';
   addGate: (gate: GateType, target: number, moment: number, control?: number) => void;
   removeGate: (opId: string) => void;
   moveGate: (opId: string, newTarget: number, newMoment: number) => void;
@@ -54,11 +56,12 @@ interface QuantumContextType {
   setActiveBackend: (backend: QuantumBackendType) => void;
   setSelectedGate: (gate: GateType | null) => void;
   runSimulation: () => Promise<SimulationResult | null>;
-  updateFromQiskit: (code: string) => void;
+  updateFromQiskit: (code: string) => { success: boolean; errors: string[] };
   undo: () => void;
   redo: () => void;
   saveCircuit: () => void;
   loadCircuit: (id: string) => void;
+  clearErrors: () => void;
 }
 
 const QuantumContext = createContext<QuantumContextType | undefined>(undefined);
@@ -76,41 +79,69 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [selectedGate, setSelectedGate] = useState<GateType | null>('H');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [qiskitWarnings, setQiskitWarnings] = useState<string[]>([]);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [syncSource, setSyncSource] = useState<'visual' | 'code'>('visual');
 
   const [backendInstance] = useState(() => new BrowserQuantumBackend());
 
-  const pushHistory = (newCircuit: CircuitModel) => {
+  const pushHistory = (newCircuit: CircuitModel, source: 'visual' | 'code' = 'visual') => {
     const nextHistory = history.slice(0, historyIndex + 1);
     nextHistory.push(newCircuit);
     if (nextHistory.length > 30) nextHistory.shift();
     setHistory(nextHistory);
     setHistoryIndex(nextHistory.length - 1);
+    setSyncSource(source);
     setCircuit(newCircuit);
   };
 
   const runSimulation = useCallback(async (): Promise<SimulationResult | null> => {
     setIsSimulating(true);
+    setSimulationError(null);
     try {
+      // 1. Validate circuit integrity
+      if (circuit.numQubits < 1) {
+        throw new Error('Circuit must contain at least 1 qubit wire.');
+      }
+      for (const op of circuit.operations) {
+        for (const t of op.targets) {
+          if (t >= circuit.numQubits) {
+            throw new Error(`Target qubit q${t} is out of bounds for ${circuit.numQubits}-qubit circuit.`);
+          }
+        }
+        for (const c of op.controls) {
+          if (c >= circuit.numQubits) {
+            throw new Error(`Control qubit q${c} is out of bounds for ${circuit.numQubits}-qubit circuit.`);
+          }
+        }
+      }
+
+      // 2. Execute via internal TypeScript simulator
       const result = await backendInstance.simulate(circuit, shots, noiseSettings);
       setSimulation(result);
       setValidationErrors([]);
+      setSimulationError(null);
       return result;
     } catch (err: any) {
-      console.warn('Simulation caught error:', err.message);
-      setValidationErrors([err.message]);
+      const errorMsg =
+        err.message ||
+        'Simulation Error: The circuit contains an unsupported operation. Please check the Python/Qiskit code or circuit.';
+      setSimulationError(
+        `Simulation Error\n${errorMsg}\nPlease check the Python/Qiskit code or circuit.`
+      );
+      setValidationErrors([errorMsg]);
       return null;
     } finally {
       setIsSimulating(false);
     }
   }, [circuit, shots, noiseSettings, backendInstance]);
 
-  // Auto-simulate on circuit change for instant reactive feedback
+  // Reactive simulation
   useEffect(() => {
     runSimulation();
   }, [circuit, shots, noiseSettings]);
 
   const addGate = (gate: GateType, target: number, moment: number, control?: number) => {
-    // Remove any conflicting gate already at this target and moment
+    // Remove conflicting gate at target and moment
     const filtered = circuit.operations.filter(
       (op) => !(op.moment === moment && op.targets.includes(target))
     );
@@ -130,7 +161,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
       numMoments: maxMoment,
       operations: [...filtered, newOp],
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const removeGate = (opId: string) => {
@@ -138,14 +169,13 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ...circuit,
       operations: circuit.operations.filter((op) => op.id !== opId),
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const moveGate = (opId: string, newTarget: number, newMoment: number) => {
     const op = circuit.operations.find((o) => o.id === opId);
     if (!op) return;
 
-    // Filter out target conflict
     const filtered = circuit.operations.filter(
       (o) => o.id !== opId && !(o.moment === newMoment && o.targets.includes(newTarget))
     );
@@ -161,7 +191,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
       numMoments: Math.max(circuit.numMoments, newMoment + 2),
       operations: [...filtered, movedOp],
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const addQubit = () => {
@@ -172,7 +202,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
       numQubits: newIdx + 1,
       qubits: [...circuit.qubits, { index: newIdx, name: `q${newIdx}`, initialValue: 0 }],
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const removeQubit = (index: number) => {
@@ -195,7 +225,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
       qubits: newQubits,
       operations: newOps,
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const toggleInitialValue = (index: number) => {
@@ -205,7 +235,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
         q.index === index ? { ...q, initialValue: (q.initialValue === 0 ? 1 : 0) as 0 | 1 } : q
       ),
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const clearCircuit = () => {
@@ -213,30 +243,43 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ...circuit,
       operations: [],
     };
-    pushHistory(updated);
+    pushHistory(updated, 'visual');
   };
 
   const resetToModel = (model: CircuitModel) => {
-    pushHistory(model);
+    pushHistory(model, 'visual');
   };
 
   const setNoiseSettings = (settings: Partial<NoiseSettings>) => {
     setNoiseSettingsState((prev) => ({ ...prev, ...settings }));
   };
 
-  const updateFromQiskit = (code: string) => {
-    const parsed = QiskitParser.parse(code);
+  /**
+   * Bidirectional sync: Python/Qiskit Code -> Qiskit Parser -> Internal Circuit Model -> Visual Circuit
+   */
+  const updateFromQiskit = (code: string): { success: boolean; errors: string[] } => {
+    const parsed = QiskitParser.parse(code, circuit);
     setQiskitWarnings(parsed.warnings);
+
     if (parsed.errors.length > 0) {
       setValidationErrors(parsed.errors);
-      return;
+      setSimulationError(
+        `Simulation Error\n${parsed.errors.join('\n')}\nPlease check the Python/Qiskit code or circuit.`
+      );
+      // Keep last valid visual circuit
+      return { success: false, errors: parsed.errors };
     }
-    pushHistory(parsed.circuit);
+
+    setValidationErrors([]);
+    setSimulationError(null);
+    pushHistory(parsed.circuit, 'code');
+    return { success: true, errors: [] };
   };
 
   const undo = () => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
+      setSyncSource('visual');
       setCircuit(history[historyIndex - 1]);
     }
   };
@@ -244,6 +287,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const redo = () => {
     if (historyIndex < history.length - 1) {
       setHistoryIndex(historyIndex + 1);
+      setSyncSource('visual');
       setCircuit(history[historyIndex + 1]);
     }
   };
@@ -256,10 +300,16 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const all = LocalDatabase.getCircuits();
     const found = all.find((c) => c.id === id);
     if (found) {
-      pushHistory(found);
+      pushHistory(found, 'visual');
     }
   };
 
+  const clearErrors = () => {
+    setValidationErrors([]);
+    setSimulationError(null);
+  };
+
+  // Pure Python Qiskit code generated from the canonical internal circuit model
   const qiskitCode = QiskitGenerator.generate(circuit);
 
   return (
@@ -277,6 +327,8 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
         canRedo: historyIndex < history.length - 1,
         validationErrors,
         qiskitWarnings,
+        simulationError,
+        syncSource,
         addGate,
         removeGate,
         moveGate,
@@ -295,6 +347,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
         redo,
         saveCircuit,
         loadCircuit,
+        clearErrors,
       }}
     >
       {children}
