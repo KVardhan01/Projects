@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { UsersSheetService } from '../services/auth/usersSheetService';
 import { Atom, AlertCircle, ArrowRight, User, Lock } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
@@ -19,26 +20,55 @@ export const RegisterPage: React.FC = () => {
 
     const cleanUsername = username.trim();
 
-    // Required Field Validations
+    // 1. Check Username is entered
     if (!cleanUsername) {
       setLocalError('Username is required');
       return;
     }
+
+    // 2. Check whether the username already exists (case-insensitive)
+    if (UsersSheetService.usernameExists(cleanUsername)) {
+      setLocalError('User already exists');
+      return;
+    }
+
+    // 3. Validate Password
     if (!password) {
       setLocalError('Password is required');
       return;
     }
+    if (password.length < 8) {
+      setLocalError('Password must be at least 8 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setLocalError('Password must contain at least one uppercase letter');
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setLocalError('Password must contain at least one lowercase letter');
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setLocalError('Password must contain at least one number');
+      return;
+    }
+    if (!/[^A-Za-z0-9\s]/.test(password)) {
+      setLocalError('Password must contain at least one special character');
+      return;
+    }
+
+    // 4. Validate Confirm Password
     if (!confirmPassword) {
       setLocalError('Confirm password is required');
       return;
     }
-
-    // Confirm password match validation
     if (password !== confirmPassword) {
       setLocalError('Confirm password is different');
       return;
     }
 
+    // 5. Only if ALL validations pass: Create account
     try {
       await register(cleanUsername, password, confirmPassword);
 

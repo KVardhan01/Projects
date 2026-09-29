@@ -113,13 +113,27 @@ export class UsersSheetService {
 
   /**
    * Registers a new user into the Users Google Sheet integration.
-   * Enforces:
-   * - Trimmed, case-insensitive duplicate username check
-   * - Required fields validation
-   * - Password and confirm password exact match
-   * - Always assigns role: 'STUDENT'
-   * - Always assigns status: 'Active'
-   * - Automatically generates the next unique UserId (e.g. U004)
+   *
+   * Username requirements:
+   * - Normal free-text username. NO conditions on length, casing, numbers, or special chars.
+   * - ONLY validation: Check whether username already exists (case-insensitive).
+   *
+   * Password requirements:
+   * 1. Minimum 8 characters ("Password must be at least 8 characters")
+   * 2. At least one uppercase letter ("Password must contain at least one uppercase letter")
+   * 3. At least one lowercase letter ("Password must contain at least one lowercase letter")
+   * 4. At least one number ("Password must contain at least one number")
+   * 5. At least one special character ("Password must contain at least one special character")
+   *
+   * Confirm password:
+   * - Must exactly match Password ("Confirm password is different")
+   *
+   * Validation Order:
+   * 1. Check Username is entered -> "Username is required"
+   * 2. Check whether username already exists -> "User already exists"
+   * 3. Validate Password (min 8 chars, uppercase, lowercase, number, special char)
+   * 4. Validate Confirm Password (entered -> match)
+   * 5. Only if ALL pass -> Create new user with role 'STUDENT' and status 'Active'
    */
   static async registerUser(params: {
     username: string;
@@ -129,28 +143,48 @@ export class UsersSheetService {
   }): Promise<SheetUserRow> {
     const rawUsername = params.username ?? '';
     const cleanUsername = rawUsername.trim();
-    const cleanPassword = params.password ?? '';
-    const cleanConfirm = params.confirmPassword ?? '';
+    const rawPassword = params.password ?? '';
+    const rawConfirm = params.confirmPassword ?? '';
 
-    // 1. Required field validations
+    // 1. Check Username is entered
     if (!cleanUsername) {
       throw new Error('Username is required');
     }
-    if (!cleanPassword) {
-      throw new Error('Password is required');
-    }
-    if (params.confirmPassword !== undefined && !cleanConfirm) {
-      throw new Error('Confirm password is required');
-    }
 
-    // 2. Confirm password match validation
-    if (params.confirmPassword !== undefined && cleanPassword !== cleanConfirm) {
-      throw new Error('Confirm password is different');
-    }
-
-    // 3. Username duplicate validation (case-insensitive)
+    // 2. Check whether the username already exists (case-insensitive)
     if (this.usernameExists(cleanUsername)) {
       throw new Error('User already exists');
+    }
+
+    // 3. Validate Password
+    if (!rawPassword) {
+      throw new Error('Password is required');
+    }
+    if (rawPassword.length < 8) {
+      throw new Error('Password must be at least 8 characters');
+    }
+    if (!/[A-Z]/.test(rawPassword)) {
+      throw new Error('Password must contain at least one uppercase letter');
+    }
+    if (!/[a-z]/.test(rawPassword)) {
+      throw new Error('Password must contain at least one lowercase letter');
+    }
+    if (!/[0-9]/.test(rawPassword)) {
+      throw new Error('Password must contain at least one number');
+    }
+    // Special character check: any character that is not a letter, digit, or whitespace
+    if (!/[^A-Za-z0-9\s]/.test(rawPassword)) {
+      throw new Error('Password must contain at least one special character');
+    }
+
+    // 4. Validate Confirm Password
+    if (params.confirmPassword !== undefined) {
+      if (!rawConfirm) {
+        throw new Error('Confirm password is required');
+      }
+      if (rawPassword !== rawConfirm) {
+        throw new Error('Confirm password is different');
+      }
     }
 
     try {
@@ -159,7 +193,7 @@ export class UsersSheetService {
         userId: nextUserId,
         name: params.name?.trim() || cleanUsername,
         username: cleanUsername,
-        password: cleanPassword,
+        password: rawPassword,
         role: 'STUDENT',
         status: 'Active',
         createdAt: new Date().toISOString(),
