@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Atom, AlertCircle, ArrowRight, User, Lock, CheckCircle2 } from 'lucide-react';
+import { Atom, AlertCircle, ArrowRight, User, Lock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { UserRole } from '../types/user';
 
 export const routeByRole = (role: UserRole): string => {
@@ -25,6 +25,7 @@ export const LoginPage: React.FC = () => {
     return (location.state as any)?.registeredUsername || '';
   });
   const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(() => {
     return (location.state as any)?.successMessage || null;
@@ -135,7 +136,7 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Password field (Never displayed in clear text) */}
+          {/* Password field */}
           <div className="space-y-1.5">
             <label
               htmlFor="password-input"
@@ -147,14 +148,27 @@ export const LoginPage: React.FC = () => {
               <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 id="password-input"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl py-2.5 pl-10 pr-3.5 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 transition-colors"
+                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl py-2.5 pl-10 pr-10 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 transition-colors"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 focus:outline-none focus:text-cyan-400 transition-colors p-0.5 rounded cursor-pointer"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
             </div>
           </div>
 
