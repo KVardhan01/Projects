@@ -175,7 +175,19 @@ export class GoogleSheetsService {
 
     logger.info('Registration', `Apps Script request started for username: ${params.username.trim()}`);
 
-    let res: Response;
+    const browserOrigin =
+      typeof window !== 'undefined' && window.location && window.location.origin
+        ? window.location.origin
+        : 'unknown';
+
+    // Sanitize URL for logging: never expose sensitive tokens, passwords or secrets
+    const sanitizedUrl = appsScriptUrl.replace(
+      /([?&](?:password|token|key|secret|auth)=)[^&]*/gi,
+      '$1[REDACTED]'
+    );
+
+    let res: Response | null = null;
+
     try {
       res = await fetch(appsScriptUrl, {
         method: 'POST',
@@ -185,20 +197,64 @@ export class GoogleSheetsService {
         body: JSON.stringify(payload),
       });
     } catch (networkErr: any) {
-      logger.error('Registration', `Apps Script request failed: ${networkErr?.message || 'Network error'}`);
+      const errName = networkErr?.name || 'Error';
+      const errMsg = networkErr?.message || String(networkErr);
+      const errStack = networkErr?.stack
+        ? ` | ErrorStack: ${networkErr.stack.replace(/\r?\n/g, ' -> ')}`
+        : '';
+
+      logger.error(
+        'Registration',
+        `Apps Script request failed | Stage: Network/CORS-level fetch failure: no HTTP response received | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseReceived: false${errStack}`
+      );
       throw new Error('Unable to create account. Please try again.');
     }
 
+    // Response object was received from server
+    const httpStatus = res.status;
+    const httpStatusText = res.statusText || 'N/A';
+
+    let rawText = '';
+    try {
+      rawText = await res.text();
+    } catch (readErr: any) {
+      logger.error(
+        'Registration',
+        `Apps Script request failed reading response body | ErrorName: ${readErr?.name || 'Error'} | ErrorMessage: ${readErr?.message || 'Failed to read response body'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseReceived: true`
+      );
+      throw new Error('Unable to create account. Please try again.');
+    }
+
+    // Sanitize response body: ensure passwords and tokens are never logged
+    const sanitizedBody = rawText
+      .replace(/password[:=]\s*["']?[^"'\s,;]+["']?/gi, 'password: [REDACTED]')
+      .replace(/confirmPassword[:=]\s*["']?[^"'\s,;]+["']?/gi, 'confirmPassword: [REDACTED]')
+      .replace(/ya29\.[a-zA-Z0-9_-]+/g, '[REDACTED_TOKEN]')
+      .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_KEY]')
+      .slice(0, 1000);
+
     if (!res.ok) {
-      logger.error('Registration', `Apps Script request failed with HTTP ${res.status}`);
+      logger.error(
+        'Registration',
+        `Apps Script request failed with HTTP ${httpStatus} ${httpStatusText} | Stage: HTTP response error | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true`
+      );
       throw new Error('Unable to create account. Please try again.');
     }
 
     let data: any;
     try {
-      data = await res.json();
-    } catch (parseErr) {
-      logger.error('Registration', 'Apps Script request failed: Invalid JSON response');
+      data = JSON.parse(rawText);
+    } catch (parseErr: any) {
+      const errName = parseErr?.name || 'SyntaxError';
+      const errMsg = parseErr?.message || 'Invalid JSON';
+      const errStack = parseErr?.stack
+        ? ` | ErrorStack: ${parseErr.stack.replace(/\r?\n/g, ' -> ')}`
+        : '';
+
+      logger.error(
+        'Registration',
+        `Apps Script request failed: Invalid JSON response | Stage: HTTP response received but JSON parse failed | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true${errStack}`
+      );
       throw new Error('Unable to create account. Please try again.');
     }
 
@@ -219,14 +275,20 @@ export class GoogleSheetsService {
     // 2. When there is another error, show the returned error message
     if (data.success === false || data.status === 'error') {
       const errorMsg = data.message || data.error || 'Unable to create account. Please try again.';
-      logger.error('Registration', `Apps Script request failed: ${errorMsg}`);
+      logger.error(
+        'Registration',
+        `Apps Script request returned failure | Stage: Application response error | ErrorName: AppsScriptError | ErrorMessage: ${errorMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true`
+      );
       throw new Error(errorMsg);
     }
 
     // 3. When registration succeeds, Google Apps Script returns:
     // { "success": true, "message": "Account created successfully", "userId": "U004" }
     if (data.success !== true && data.status !== 'success') {
-      logger.error('Registration', `Google Sheet write failed: ${data.message || 'Unknown response'}`);
+      logger.error(
+        'Registration',
+        `Google Sheet write failed: ${data.message || 'Unknown response'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true`
+      );
       throw new Error(data.message || 'Unable to create account. Please try again.');
     }
 
