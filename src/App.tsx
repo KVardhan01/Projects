@@ -17,6 +17,7 @@ import { ProgressPage } from './pages/ProgressPage';
 import { AchievementsPage } from './pages/AchievementsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
 
 // Instructor Pages
@@ -77,6 +78,7 @@ export default function App() {
 
               {/* Public Auth Routes */}
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
               <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
               {/* Main App Layout (All routes strictly protected) */}

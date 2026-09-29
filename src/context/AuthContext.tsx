@@ -10,6 +10,7 @@ interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   login: (username: string, password: string) => Promise<UserProfile>;
+  register: (username: string, password: string, confirmPassword?: string) => Promise<void>;
   updateUserStats: (xpGain: number, confidenceDelta?: number) => void;
   logout: () => void;
   clearError: () => void;
@@ -56,6 +57,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const register = async (
+    usernameInput: string,
+    passwordInput: string,
+    confirmPasswordInput?: string
+  ): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const newRow = await UsersSheetService.registerUser({
+        username: usernameInput,
+        password: passwordInput,
+        confirmPassword: confirmPasswordInput,
+      });
+
+      // Synchronize into LocalDatabase user list as well for administration views
+      LocalDatabase.saveUser({
+        id: newRow.userId,
+        username: newRow.username,
+        name: newRow.name,
+        email: `${newRow.username}@qubify.edu`,
+        photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+          newRow.name
+        )}&background=0891b2&color=fff`,
+        role: 'STUDENT',
+        status: 'Active',
+        xp: 0,
+        streak: 0,
+        confidence: 0,
+        weeklyGoal: 0,
+        weeklyGoalProgress: 0,
+        currentCourseId: 'quantum-computing-mastery',
+        currentModuleId: 'mod-foundations',
+        currentLessonId: 'lesson-1-what-is-qubit',
+        createdAt: newRow.createdAt,
+        lastLoginAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+        isActive: true,
+      });
+    } catch (err: any) {
+      const msg = err.message || 'Registration failed.';
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const updateUserStats = (xpGain: number, confidenceDelta: number = 0) => {
     if (!user) return;
     const updated: UserProfile = {
@@ -89,6 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         error,
         login,
+        register,
         updateUserStats,
         logout,
         clearError,

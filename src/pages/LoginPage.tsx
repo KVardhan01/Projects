@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Atom, AlertCircle, ArrowRight, User, Lock } from 'lucide-react';
+import { Atom, AlertCircle, ArrowRight, User, Lock, CheckCircle2 } from 'lucide-react';
 import { UserRole } from '../types/user';
 
 export const routeByRole = (role: UserRole): string => {
@@ -18,11 +18,17 @@ export const routeByRole = (role: UserRole): string => {
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated, login, isLoading, error, clearError } = useAuth();
 
-  const [username, setUsername] = useState<string>('');
+  const [username, setUsername] = useState<string>(() => {
+    return (location.state as any)?.registeredUsername || '';
+  });
   const [password, setPassword] = useState<string>('');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(() => {
+    return (location.state as any)?.successMessage || null;
+  });
 
   // If already authenticated with active status, automatically navigate to authorized portal
   useEffect(() => {
@@ -35,6 +41,7 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     clearError();
     setLocalError(null);
+    setSuccessMessage(null);
 
     if (!username.trim() || !password.trim()) {
       setLocalError('Please enter both username and password.');
@@ -86,6 +93,14 @@ export const LoginPage: React.FC = () => {
             Sign in with your Qubify credentials to access your quantum workspace.
           </p>
         </div>
+
+        {/* Success Notice */}
+        {successMessage && (
+          <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs text-left flex items-start gap-2.5 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+            <div className="leading-relaxed font-sans">{successMessage}</div>
+          </div>
+        )}
 
         {/* Error Notice */}
         {displayedError && (
@@ -153,6 +168,19 @@ export const LoginPage: React.FC = () => {
               <span>{isLoading ? 'Signing in...' : 'Sign In'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+          </div>
+
+          {/* New user? Create an account */}
+          <div className="pt-1 text-center">
+            <p className="text-xs text-slate-400">
+              New user?{' '}
+              <Link
+                to="/register"
+                className="text-cyan-400 hover:text-cyan-300 font-semibold underline underline-offset-4 transition-colors"
+              >
+                Create an account
+              </Link>
+            </p>
           </div>
         </form>
 

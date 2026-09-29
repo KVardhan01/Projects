@@ -83,6 +83,98 @@ export class UsersSheetService {
   }
 
   /**
+   * Generates a new unique UserId following the U001, U002, U003... convention.
+   */
+  static generateNextUserId(): string {
+    const users = this.getUsers();
+    let maxNum = 0;
+    for (const u of users) {
+      const match = u.userId.match(/^U(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+    const nextNum = maxNum + 1;
+    return `U${String(nextNum).padStart(3, '0')}`;
+  }
+
+  /**
+   * Case-insensitive check whether a username exists in the Users sheet.
+   */
+  static usernameExists(usernameInput: string): boolean {
+    const clean = usernameInput.trim().toLowerCase();
+    if (!clean) return false;
+    const users = this.getUsers();
+    return users.some((u) => u.username.trim().toLowerCase() === clean);
+  }
+
+  /**
+   * Registers a new user into the Users Google Sheet integration.
+   * Enforces:
+   * - Trimmed, case-insensitive duplicate username check
+   * - Required fields validation
+   * - Password and confirm password exact match
+   * - Always assigns role: 'STUDENT'
+   * - Always assigns status: 'Active'
+   * - Automatically generates the next unique UserId (e.g. U004)
+   */
+  static async registerUser(params: {
+    username: string;
+    password: string;
+    confirmPassword?: string;
+    name?: string;
+  }): Promise<SheetUserRow> {
+    const rawUsername = params.username ?? '';
+    const cleanUsername = rawUsername.trim();
+    const cleanPassword = params.password ?? '';
+    const cleanConfirm = params.confirmPassword ?? '';
+
+    // 1. Required field validations
+    if (!cleanUsername) {
+      throw new Error('Username is required');
+    }
+    if (!cleanPassword) {
+      throw new Error('Password is required');
+    }
+    if (params.confirmPassword !== undefined && !cleanConfirm) {
+      throw new Error('Confirm password is required');
+    }
+
+    // 2. Confirm password match validation
+    if (params.confirmPassword !== undefined && cleanPassword !== cleanConfirm) {
+      throw new Error('Confirm password is different');
+    }
+
+    // 3. Username duplicate validation (case-insensitive)
+    if (this.usernameExists(cleanUsername)) {
+      throw new Error('User already exists');
+    }
+
+    try {
+      const nextUserId = this.generateNextUserId();
+      const newRow: SheetUserRow = {
+        userId: nextUserId,
+        name: params.name?.trim() || cleanUsername,
+        username: cleanUsername,
+        password: cleanPassword,
+        role: 'STUDENT',
+        status: 'Active',
+        createdAt: new Date().toISOString(),
+      };
+
+      // Save user to Users sheet storage
+      this.saveUser(newRow);
+
+      return newRow;
+    } catch (e: any) {
+      throw new Error('Unable to create account. Please try again.');
+    }
+  }
+
+  /**
    * Save or update a user record in the Users table.
    */
   static saveUser(user: SheetUserRow): void {
