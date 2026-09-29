@@ -1,0 +1,4 @@
+2026-09-29 15:55:21 | ERROR | Registration | Google Apps Script Web App URL is not configured
+2026-09-29 10:30:53 | INFO | Registration | Registration request started for username: TestUser
+2026-09-29 10:31:00 | INFO | SecurityTest | Testing user login password: [REDACTED] and confirmPassword: [REDACTED]
+2026-09-29 10:37:04 | INFO | Registration | Registration started for username: Sekhar12345

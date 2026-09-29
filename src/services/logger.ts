@@ -76,13 +76,23 @@ class QubifyLogger {
       const item = this.queue.shift();
       if (!item) break;
       try {
-        await fetch('/api/log', {
+        const res = await fetch('/__qubify_log', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(item),
         });
+        if (!res.ok) {
+          // Fallback to /api/log
+          await fetch('/api/log', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(item),
+          });
+        }
       } catch {
         // Dev server may be unreachable during restart; silently continue
       }

@@ -12,6 +12,18 @@ function qubifyLoggingPlugin() {
   const logDir = path.resolve(__dirname, 'logs');
   const logFile = path.join(logDir, 'qubify.log');
 
+  // Immediately ensure logs directory and file exist in the project root on Vite startup
+  try {
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    if (!fs.existsSync(logFile)) {
+      fs.writeFileSync(logFile, '', 'utf-8');
+    }
+  } catch (initErr) {
+    console.warn('Failed to initialize logs directory:', initErr);
+  }
+
   const appendLog = (level: string, moduleName: string, message: string, timestamp?: string) => {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
@@ -26,14 +38,22 @@ function qubifyLoggingPlugin() {
       .replace(/password[:=]\s*["']?[^"'\s,;]+["']?/gi, 'password: [REDACTED]')
       .replace(/confirmPassword[:=]\s*["']?[^"'\s,;]+["']?/gi, 'confirmPassword: [REDACTED]')
       .replace(/ya29\.[a-zA-Z0-9_-]+/g, '[REDACTED_TOKEN]')
-      .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_KEY]');
+      .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_KEY]')
+      .replace(/bearer\s+[a-zA-Z0-9_\-\.]+/gi, 'Bearer [REDACTED]');
 
     const entry = `${timeStr} | ${String(level).toUpperCase()} | ${moduleName || 'System'} | ${cleanMessage}\n`;
     fs.appendFileSync(logFile, entry, 'utf-8');
   };
 
   const handleLogMiddleware = (req: any, res: any, next: any) => {
-    if (req.url === '/api/log' && req.method === 'POST') {
+    const isLogEndpoint =
+      req.url &&
+      (req.url === '/__qubify_log' ||
+        req.url.startsWith('/__qubify_log?') ||
+        req.url === '/api/log' ||
+        req.url.startsWith('/api/log?'));
+
+    if (isLogEndpoint && req.method === 'POST') {
       let body = '';
       req.on('data', (chunk: any) => {
         body += chunk;
