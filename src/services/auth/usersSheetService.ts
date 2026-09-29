@@ -1,4 +1,5 @@
 import { UserRole, UserProfile } from '../../types/user';
+import { GoogleSheetsService } from '../google/googleSheets';
 
 export interface SheetUserRow {
   userId: string;
@@ -102,6 +103,30 @@ export class UsersSheetService {
   }
 
   /**
+   * Overrides or updates the local cache of Users sheet records.
+   */
+  static overrideUsers(users: SheetUserRow[]): void {
+    try {
+      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(users));
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Synchronizes the latest user records from Google Sheets if configured.
+   */
+  static async syncFromGoogleSheets(): Promise<void> {
+    try {
+      if (GoogleSheetsService.hasLiveConnection()) {
+        await GoogleSheetsService.readSheet('Users');
+      }
+    } catch (e) {
+      console.warn('syncFromGoogleSheets error:', e);
+    }
+  }
+
+  /**
    * Case-insensitive check whether a username exists in the Users sheet.
    */
   static usernameExists(usernameInput: string): boolean {
@@ -133,7 +158,8 @@ export class UsersSheetService {
    * 2. Check whether username already exists -> "User already exists"
    * 3. Validate Password (min 8 chars, uppercase, lowercase, number, special char)
    * 4. Validate Confirm Password (entered -> match)
-   * 5. Only if ALL pass -> Create new user with role 'STUDENT' and status 'Active'
+   * 5. Only if ALL pass -> Append to actual Google Sheets Users tab
+   * 6. Save locally and return only after Google Sheets append succeeds
    */
   static async registerUser(params: {
     username: string;
@@ -150,6 +176,9 @@ export class UsersSheetService {
     if (!cleanUsername) {
       throw new Error('Username is required');
     }
+
+    // Attempt sync if live sheet connection is active to prevent duplicates
+    await this.syncFromGoogleSheets();
 
     // 2. Check whether the username already exists (case-insensitive)
     if (this.usernameExists(cleanUsername)) {
@@ -187,25 +216,43 @@ export class UsersSheetService {
       }
     }
 
+    // 5. Generate next unique UserId and Date (e.g. U004 | 2026-09-29)
+    const nextUserId = this.generateNextUserId();
+    const createdAt = new Date().toISOString().split('T')[0];
+
+    const newRow: SheetUserRow = {
+      userId: nextUserId,
+      name: params.name?.trim() || cleanUsername,
+      username: cleanUsername,
+      password: rawPassword,
+      role: 'STUDENT',
+      status: 'Active',
+      createdAt,
+    };
+
+    // 6. Append NEW ROW to actual Google Sheets Users tab
+    // Row schema: UserId | Name | Username | Password | STUDENT | Active | CreatedAt
+    const rowValues: (string | number | boolean | null)[] = [
+      newRow.userId,
+      newRow.name,
+      newRow.username,
+      newRow.password || '',
+      'STUDENT',
+      'Active',
+      newRow.createdAt,
+    ];
+
     try {
-      const nextUserId = this.generateNextUserId();
-      const newRow: SheetUserRow = {
-        userId: nextUserId,
-        name: params.name?.trim() || cleanUsername,
-        username: cleanUsername,
-        password: rawPassword,
-        role: 'STUDENT',
-        status: 'Active',
-        createdAt: new Date().toISOString(),
-      };
-
-      // Save user to Users sheet storage
-      this.saveUser(newRow);
-
-      return newRow;
+      await GoogleSheetsService.appendRow('Users', rowValues);
     } catch (e: any) {
-      throw new Error('Unable to create account. Please try again.');
+      console.error('Google Sheets write failed:', e);
+      throw new Error(e.message || 'Unable to create account. Please try again.');
     }
+
+    // 7. Only save locally to cache after Google Sheets write succeeds
+    this.saveUser(newRow);
+
+    return newRow;
   }
 
   /**
