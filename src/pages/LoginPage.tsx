@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { logger } from '../services/logger';
 import { Atom, AlertCircle, ArrowRight, User, Lock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { UserRole } from '../types/user';
 
@@ -44,10 +45,14 @@ export const LoginPage: React.FC = () => {
     setLocalError(null);
     setSuccessMessage(null);
 
-    if (!username.trim() || !password.trim()) {
+    const cleanUser = username.trim();
+    if (!cleanUser || !password.trim()) {
+      logger.warning('Authentication', 'Login rejected: Missing username or password');
       setLocalError('Please enter both username and password.');
       return;
     }
+
+    logger.info('Authentication', `Login request started for username: ${cleanUser}`);
 
     try {
       // Authenticate against the Users sheet table:
@@ -55,10 +60,16 @@ export const LoginPage: React.FC = () => {
       // 2. Verify username and password
       // 3. Check status is Active
       // 4. Read Role column and route automatically
-      const authenticatedUser = await login(username.trim(), password.trim());
+      const authenticatedUser = await login(cleanUser, password.trim());
+      logger.success(
+        'Authentication',
+        `Login success for username: ${authenticatedUser.username} (${authenticatedUser.role})`
+      );
       navigate(routeByRole(authenticatedUser.role), { replace: true });
     } catch (err: any) {
-      setLocalError(err.message || 'Authentication failed. Please check your credentials.');
+      const errMsg = err.message || 'Authentication failed. Please check your credentials.';
+      logger.warning('Authentication', `Login failure for username: ${cleanUser}: ${errMsg}`);
+      setLocalError(errMsg);
     }
   };
 

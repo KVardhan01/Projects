@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { UsersSheetService } from '../services/auth/usersSheetService';
+import { logger } from '../services/logger';
 import { Atom, AlertCircle, ArrowRight, User, Lock, Eye, EyeOff } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
@@ -21,51 +22,62 @@ export const RegisterPage: React.FC = () => {
     setLocalError(null);
 
     const cleanUsername = username.trim();
+    logger.info('Registration', `Registration request started for username: ${cleanUsername || '[empty]'}`);
 
     // 1. Check Username is entered
     if (!cleanUsername) {
+      logger.warning('Registration', 'Username is required');
       setLocalError('Username is required');
       return;
     }
 
     // 2. Check whether the username already exists (case-insensitive)
     if (UsersSheetService.usernameExists(cleanUsername)) {
+      logger.warning('Registration', `Duplicate username detected for username: ${cleanUsername}`);
       setLocalError('User already exists');
       return;
     }
 
     // 3. Validate Password
     if (!password) {
+      logger.warning('Registration', 'Password validation failure: Password is required');
       setLocalError('Password is required');
       return;
     }
     if (password.length < 8) {
+      logger.warning('Registration', 'Password validation failure: Minimum 8 characters required');
       setLocalError('Password must be at least 8 characters');
       return;
     }
     if (!/[A-Z]/.test(password)) {
+      logger.warning('Registration', 'Password validation failure: Uppercase letter missing');
       setLocalError('Password must contain at least one uppercase letter');
       return;
     }
     if (!/[a-z]/.test(password)) {
+      logger.warning('Registration', 'Password validation failure: Lowercase letter missing');
       setLocalError('Password must contain at least one lowercase letter');
       return;
     }
     if (!/[0-9]/.test(password)) {
+      logger.warning('Registration', 'Password validation failure: Number missing');
       setLocalError('Password must contain at least one number');
       return;
     }
     if (!/[^A-Za-z0-9\s]/.test(password)) {
+      logger.warning('Registration', 'Password validation failure: Special character missing');
       setLocalError('Password must contain at least one special character');
       return;
     }
 
     // 4. Validate Confirm Password
     if (!confirmPassword) {
+      logger.warning('Registration', 'Confirm password mismatch: Confirm password is required');
       setLocalError('Confirm password is required');
       return;
     }
     if (password !== confirmPassword) {
+      logger.warning('Registration', 'Confirm password mismatch: Passwords do not match');
       setLocalError('Confirm password is different');
       return;
     }
@@ -73,6 +85,7 @@ export const RegisterPage: React.FC = () => {
     // 5. Only if ALL validations pass: Create account
     try {
       await register(cleanUsername, password, confirmPassword);
+      logger.success('Registration', `Registration request successful for username: ${cleanUsername}`);
 
       // Return user to login page with prefilled username and success banner
       navigate('/login', {
@@ -84,6 +97,13 @@ export const RegisterPage: React.FC = () => {
       });
     } catch (err: any) {
       const msg = err.message || 'Unable to create account. Please try again.';
+      if (msg.includes('Google Apps Script Web App URL is not configured')) {
+        logger.error('Registration', 'Google Apps Script Web App URL is not configured');
+      } else if (msg === 'User already exists') {
+        logger.warning('Registration', `Duplicate username: ${cleanUsername}`);
+      } else {
+        logger.error('Registration', `Google Sheet write failed: ${msg}`);
+      }
       setLocalError(msg);
     }
   };

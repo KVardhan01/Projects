@@ -2,6 +2,7 @@ import { CircuitModel, CircuitOperation, SimulationResult, NoiseSettings, BlochV
 import { QuantumState } from './QuantumState';
 import { QuantumGate } from './QuantumGate';
 import { NoiseModel } from './NoiseModel';
+import { logger } from '../services/logger';
 
 export class QuantumCircuitSimulator {
   /**
@@ -64,53 +65,60 @@ export class QuantumCircuitSimulator {
     const startTime = performance.now();
     const validation = this.validateCircuit(circuit);
     if (!validation.isValid) {
-      throw new Error(`Circuit validation failed: ${validation.errors.join(', ')}`);
+      const errMsg = `Circuit validation failed: ${validation.errors.join(', ')}`;
+      logger.error('QuantumSimulator', errMsg);
+      throw new Error(errMsg);
     }
 
-    // Initialize state to |00...0> or initial qubit values
-    const initialValues = circuit.qubits.map((q) => q.initialValue ?? 0);
-    const state = new QuantumState(circuit.numQubits, initialValues);
+    try {
+      // Initialize state to |00...0> or initial qubit values
+      const initialValues = circuit.qubits.map((q) => q.initialValue ?? 0);
+      const state = new QuantumState(circuit.numQubits, initialValues);
 
-    // Group operations by moment for sequential execution
-    const sortedOps = [...circuit.operations].sort((a, b) => a.moment - b.moment);
+      // Group operations by moment for sequential execution
+      const sortedOps = [...circuit.operations].sort((a, b) => a.moment - b.moment);
 
-    for (const op of sortedOps) {
-      this.applyOperation(state, op, noiseSettings);
+      for (const op of sortedOps) {
+        this.applyOperation(state, op, noiseSettings);
+      }
+
+      state.normalize();
+
+      // Calculate basis states, probabilities
+      const basisStates = state.getBasisStates();
+      const probabilities: Record<string, number> = {};
+      for (const bs of basisStates) {
+        probabilities[bs.binary] = bs.probability;
+      }
+
+      // Compute Bloch vectors for each qubit
+      const blochSpheres: Record<number, BlochVector> = {};
+      for (let q = 0; q < circuit.numQubits; q++) {
+        blochSpheres[q] = state.getBlochVector(q);
+      }
+
+      // Probabilistic measurement sampling
+      const readoutError = noiseSettings.enabled ? noiseSettings.readoutErrorRate : 0;
+      const { counts, history } = state.sampleMeasurements(shots, readoutError);
+
+      const executionTimeMs = performance.now() - startTime;
+
+      return {
+        stateVector: state.getVector(),
+        basisStates,
+        probabilities,
+        shots,
+        measurementCounts: counts,
+        measurementHistory: history,
+        sampledAt: Date.now(),
+        noiseApplied: noiseSettings.enabled,
+        executionTimeMs,
+        blochSpheres,
+      };
+    } catch (err: any) {
+      logger.error('QuantumSimulator', `Quantum simulation error: ${err.message || String(err)}`);
+      throw err;
     }
-
-    state.normalize();
-
-    // Calculate basis states, probabilities
-    const basisStates = state.getBasisStates();
-    const probabilities: Record<string, number> = {};
-    for (const bs of basisStates) {
-      probabilities[bs.binary] = bs.probability;
-    }
-
-    // Compute Bloch vectors for each qubit
-    const blochSpheres: Record<number, BlochVector> = {};
-    for (let q = 0; q < circuit.numQubits; q++) {
-      blochSpheres[q] = state.getBlochVector(q);
-    }
-
-    // Probabilistic measurement sampling
-    const readoutError = noiseSettings.enabled ? noiseSettings.readoutErrorRate : 0;
-    const { counts, history } = state.sampleMeasurements(shots, readoutError);
-
-    const executionTimeMs = performance.now() - startTime;
-
-    return {
-      stateVector: state.getVector(),
-      basisStates,
-      probabilities,
-      shots,
-      measurementCounts: counts,
-      measurementHistory: history,
-      sampledAt: Date.now(),
-      noiseApplied: noiseSettings.enabled,
-      executionTimeMs,
-      blochSpheres,
-    };
   }
 
   /**

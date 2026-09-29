@@ -1,4 +1,5 @@
 import { UsersSheetService, SheetUserRow } from '../auth/usersSheetService';
+import { logger } from '../logger';
 
 export const SHEET_TABS = [
   'Users',
@@ -157,8 +158,9 @@ export class GoogleSheetsService {
   }): Promise<SheetUserRow> {
     const appsScriptUrl = this.getAppsScriptUrl();
     if (!appsScriptUrl || appsScriptUrl.trim().length < 10) {
+      logger.error('Registration', 'Google Apps Script Web App URL is not configured');
       throw new Error(
-        'Unable to write to Google Sheets spreadsheet. Authorization is required. Please configure your Google Apps Script Web App URL in Admin Settings or set VITE_GOOGLE_APPS_SCRIPT_URL.'
+        'Google Apps Script Web App URL is not configured. Please set VITE_GOOGLE_APPS_SCRIPT_URL.'
       );
     }
 
@@ -171,6 +173,8 @@ export class GoogleSheetsService {
       password: params.password,
     };
 
+    logger.info('Registration', `Apps Script request started for username: ${params.username.trim()}`);
+
     let res: Response;
     try {
       res = await fetch(appsScriptUrl, {
@@ -180,12 +184,13 @@ export class GoogleSheetsService {
         },
         body: JSON.stringify(payload),
       });
-    } catch (networkErr) {
-      console.error('Apps Script registration network error:', networkErr);
+    } catch (networkErr: any) {
+      logger.error('Registration', `Apps Script request failed: ${networkErr?.message || 'Network error'}`);
       throw new Error('Unable to create account. Please try again.');
     }
 
     if (!res.ok) {
+      logger.error('Registration', `Apps Script request failed with HTTP ${res.status}`);
       throw new Error('Unable to create account. Please try again.');
     }
 
@@ -193,7 +198,7 @@ export class GoogleSheetsService {
     try {
       data = await res.json();
     } catch (parseErr) {
-      console.error('Failed to parse Apps Script response JSON:', parseErr);
+      logger.error('Registration', 'Apps Script request failed: Invalid JSON response');
       throw new Error('Unable to create account. Please try again.');
     }
 
@@ -207,18 +212,21 @@ export class GoogleSheetsService {
       (data.status === 'error' &&
         String(data.message || data.error).toLowerCase().includes('already exists'))
     ) {
+      logger.warning('Registration', `Duplicate username: ${params.username.trim()}`);
       throw new Error('User already exists');
     }
 
     // 2. When there is another error, show the returned error message
     if (data.success === false || data.status === 'error') {
       const errorMsg = data.message || data.error || 'Unable to create account. Please try again.';
+      logger.error('Registration', `Apps Script request failed: ${errorMsg}`);
       throw new Error(errorMsg);
     }
 
     // 3. When registration succeeds, Google Apps Script returns:
     // { "success": true, "message": "Account created successfully", "userId": "U004" }
     if (data.success !== true && data.status !== 'success') {
+      logger.error('Registration', `Google Sheet write failed: ${data.message || 'Unknown response'}`);
       throw new Error(data.message || 'Unable to create account. Please try again.');
     }
 
@@ -234,6 +242,11 @@ export class GoogleSheetsService {
       status: 'Active',
       createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
     };
+
+    logger.success(
+      'Registration',
+      `Apps Script request successful - Google Sheet write successful for user ${confirmedUser.userId}`
+    );
 
     return confirmedUser;
   }

@@ -1,5 +1,6 @@
 import { CircuitModel, GateType, CircuitOperation, QubitDefinition } from '../../types/quantum';
 import { CircuitAST, ASTGateCallNode, ASTMeasurementNode, ASTUnsupportedNode } from './CircuitAST';
+import { logger } from '../../services/logger';
 
 export interface ParseResult {
   circuit: CircuitModel;
@@ -305,6 +306,10 @@ export class QiskitParser {
       nodes: astNodes,
       unsupportedWarnings: warnings,
     };
+
+    if (errors.length > 0) {
+      logger.error('QiskitParser', `Python/Qiskit parsing errors: ${errors.join('; ')}`);
+    }
 
     return { circuit, ast, warnings, errors, unsupportedOperations };
   }

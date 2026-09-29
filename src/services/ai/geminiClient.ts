@@ -1,4 +1,5 @@
 import { AIContext, AIMessage } from '../../types/ai';
+import { logger } from '../logger';
 
 export class GeminiService {
   private static apiKey: string =
@@ -83,8 +84,11 @@ GUIDELINES:
           const data = await response.json();
           const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (reply) return reply;
+        } else {
+          logger.error('AITutor', `AI Tutor request failed with HTTP ${response.status}`);
         }
-      } catch (err) {
+      } catch (err: any) {
+        logger.error('AITutor', `AI Tutor error: ${err.message || String(err)}`);
         console.warn('Direct Gemini API request failed, falling back to local expert system:', err);
       }
     }
