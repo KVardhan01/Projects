@@ -216,43 +216,70 @@ export class UsersSheetService {
       }
     }
 
-    // 5. Generate next unique UserId and Date (e.g. U004 | 2026-09-29)
-    const nextUserId = this.generateNextUserId();
-    const createdAt = new Date().toISOString().split('T')[0];
+    // 5. Send registration data to Google Apps Script Web App
+    const appsScriptUrl = GoogleSheetsService.getAppsScriptUrl();
+    if (appsScriptUrl && appsScriptUrl.trim().length > 10) {
+      try {
+        const confirmedUser = await GoogleSheetsService.registerUserViaAppsScript({
+          username: cleanUsername,
+          password: rawPassword,
+          name: params.name?.trim() || cleanUsername,
+        });
 
-    const newRow: SheetUserRow = {
-      userId: nextUserId,
-      name: params.name?.trim() || cleanUsername,
-      username: cleanUsername,
-      password: rawPassword,
-      role: 'STUDENT',
-      status: 'Active',
-      createdAt,
-    };
-
-    // 6. Append NEW ROW to actual Google Sheets Users tab
-    // Row schema: UserId | Name | Username | Password | STUDENT | Active | CreatedAt
-    const rowValues: (string | number | boolean | null)[] = [
-      newRow.userId,
-      newRow.name,
-      newRow.username,
-      newRow.password || '',
-      'STUDENT',
-      'Active',
-      newRow.createdAt,
-    ];
-
-    try {
-      await GoogleSheetsService.appendRow('Users', rowValues);
-    } catch (e: any) {
-      console.error('Google Sheets write failed:', e);
-      throw new Error(e.message || 'Unable to create account. Please try again.');
+        // 6. Only save locally to cache after Google Apps Script confirms row written
+        this.saveUser(confirmedUser);
+        return confirmedUser;
+      } catch (e: any) {
+        if (
+          e.message === 'User already exists' ||
+          String(e.message).toLowerCase().includes('already exists')
+        ) {
+          throw new Error('User already exists');
+        }
+        console.error('Google Apps Script registration failed:', e);
+        throw new Error('Unable to create account. Please try again.');
+      }
     }
 
-    // 7. Only save locally to cache after Google Sheets write succeeds
-    this.saveUser(newRow);
+    // Fallback if Apps Script URL is not yet configured but OAuth Access Token exists
+    if (GoogleSheetsService.getAccessToken()) {
+      const nextUserId = this.generateNextUserId();
+      const createdAt = new Date().toISOString().split('T')[0];
 
-    return newRow;
+      const newRow: SheetUserRow = {
+        userId: nextUserId,
+        name: params.name?.trim() || cleanUsername,
+        username: cleanUsername,
+        password: rawPassword,
+        role: 'STUDENT',
+        status: 'Active',
+        createdAt,
+      };
+
+      const rowValues: (string | number | boolean | null)[] = [
+        newRow.userId,
+        newRow.name,
+        newRow.username,
+        newRow.password || '',
+        'STUDENT',
+        'Active',
+        newRow.createdAt,
+      ];
+
+      try {
+        await GoogleSheetsService.appendRow('Users', rowValues);
+      } catch (e: any) {
+        console.error('Google Sheets write failed:', e);
+        throw new Error('Unable to create account. Please try again.');
+      }
+
+      this.saveUser(newRow);
+      return newRow;
+    }
+
+    throw new Error(
+      'Unable to write to Google Sheets spreadsheet. Authorization is required. Please configure your Google Apps Script Web App URL in Admin Settings or set VITE_GOOGLE_APPS_SCRIPT_URL.'
+    );
   }
 
   /**
@@ -292,14 +319,34 @@ export class UsersSheetService {
       throw new Error('Please enter both username and password.');
     }
 
-    const users = this.getUsers();
+    // Sync latest user records from Google Sheets if configured
+    try {
+      await this.syncFromGoogleSheets();
+    } catch (syncErr) {
+      console.warn('Sync from Google Sheets before login warning:', syncErr);
+    }
+
+    let users = this.getUsers();
 
     // 1. Find the matching user in the Users sheet
-    const matching = users.find(
+    let matching = users.find(
       (u) =>
         u.username.toLowerCase() === cleanUser ||
         (u.userId && u.userId.toLowerCase() === cleanUser)
     );
+
+    // If not found in local cache, try another sync attempt
+    if (!matching && GoogleSheetsService.hasLiveConnection()) {
+      try {
+        await this.syncFromGoogleSheets();
+        users = this.getUsers();
+        matching = users.find(
+          (u) =>
+            u.username.toLowerCase() === cleanUser ||
+            (u.userId && u.userId.toLowerCase() === cleanUser)
+        );
+      } catch {}
+    }
 
     if (!matching) {
       throw new Error('Invalid username or password.');

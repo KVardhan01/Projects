@@ -135,35 +135,115 @@ export const AdminConfigPage: React.FC = () => {
           </div>
 
           {showScriptModal && (
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-left">
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-left">
               <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
                 <span className="font-bold text-cyan-400">Google Apps Script (Code.gs)</span>
-                <span className="text-slate-500">Also saved in /google-apps-script.js</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                In Google Sheets, go to <strong>Extensions &gt; Apps Script</strong>, paste the code below, and click <strong>Deploy &gt; New deployment &gt; Web app</strong> (Execute as Me, Access: Anyone).
-              </p>
-              <pre className="p-3 bg-slate-900 rounded-xl text-[10px] text-slate-300 font-mono overflow-x-auto max-h-48 border border-slate-800">
-{`function doGet(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Users') || ss.getSheets()[0];
-  const data = sheet.getDataRange().getValues();
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'success', headers: data[0] || [], rows: data.slice(1) || []
-  })).setMimeType(ContentService.MimeType.JSON);
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code = `var SPREADSHEET_ID = '1Lg7Z3Lh3YE2x-KvX2O7jNdcnP753z3PtQLR-tG8wU-U';
+
+function doGet(e) {
+  try {
+    var params = (e && e.parameter) || {};
+    var action = params.action || 'read';
+    var sheetId = params.sheetId || params.spreadsheetId || SPREADSHEET_ID;
+    var tabName = params.tab || params.sheet || 'Users';
+
+    var ss = SpreadsheetApp.openById(sheetId) || SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(tabName) || ss.getSheets()[0];
+    var values = sheet.getDataRange().getValues();
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      tab: sheet.getName(),
+      headers: values[0] || [],
+      rows: values.slice(1) || []
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 function doPost(e) {
-  const payload = JSON.parse(e.postData.contents);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(payload.tab || 'Users') || ss.getSheets()[0];
-  sheet.appendRow(payload.row);
-  SpreadsheetApp.flush();
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'success', message: 'Row appended successfully'
-  })).setMimeType(ContentService.MimeType.JSON);
-}`}
-              </pre>
+  try {
+    var payload = {};
+    if (e && e.postData && e.postData.contents) {
+      try { payload = JSON.parse(e.postData.contents); } catch (pErr) { payload = e.parameter || {}; }
+    } else if (e && e.parameter) {
+      payload = e.parameter;
+    }
+
+    var action = payload.action || 'register';
+    var sheetId = payload.spreadsheetId || payload.sheetId || SPREADSHEET_ID;
+    var ss = SpreadsheetApp.openById(sheetId) || SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Users') || ss.getSheets()[0];
+
+    if (action === 'register' || action === 'registerUser') {
+      var username = (payload.username || '').toString().trim();
+      var password = (payload.password || '').toString();
+      var name = (payload.name || username).toString().trim();
+
+      if (!username) return ContentService.createTextOutput(JSON.stringify({ status: 'error', error: 'Username is required' })).setMimeType(ContentService.MimeType.JSON);
+
+      var values = sheet.getDataRange().getValues();
+      var checkUser = username.toLowerCase();
+      var maxNum = 0;
+
+      for (var r = 1; r < values.length; r++) {
+        var row = values[r];
+        if (!row || row.length === 0) continue;
+        var existingUser = (row[2] || '').toString().trim().toLowerCase();
+        if (existingUser === checkUser) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            error: 'User already exists',
+            message: 'User already exists'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        var m = (row[0] || '').toString().match(/^U(\\d+)$/i);
+        if (m) {
+          var n = parseInt(m[1], 10);
+          if (n > maxNum) maxNum = n;
+        }
+      }
+
+      var nextUserId = 'U' + ('000' + (maxNum + 1)).slice(-3);
+      var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'UTC', 'yyyy-MM-dd');
+      var newRow = [nextUserId, name, username, password, 'STUDENT', 'Active', today];
+      sheet.appendRow(newRow);
+      SpreadsheetApp.flush();
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        success: true,
+        message: 'Account created successfully',
+        user: { userId: nextUserId, name: name, username: username, role: 'STUDENT', status: 'Active', createdAt: today }
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'appendRow' || action === 'append') {
+      sheet.appendRow(payload.row);
+      SpreadsheetApp.flush();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row appended successfully' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unsupported action' })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+                    navigator.clipboard.writeText(code);
+                    alert('Full Google Apps Script copied to clipboard!');
+                  }}
+                  className="text-cyan-400 hover:text-cyan-300 font-mono text-[11px] underline cursor-pointer"
+                >
+                  Copy Script Code
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                In your Google Sheet, go to <strong>Extensions &gt; Apps Script</strong>, paste the code from <code>/google-apps-script.js</code>, and click <strong>Deploy &gt; New deployment &gt; Web app</strong> with Execute as: <strong>Me</strong> and Who has access: <strong>Anyone</strong>.
+              </p>
             </div>
           )}
 

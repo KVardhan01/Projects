@@ -32,15 +32,38 @@ const STORAGE_KEYS = {
 };
 
 export class GoogleSheetsService {
-  private static sheetsId: string =
-    (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEYS.SHEETS_ID)) ||
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_SHEETS_ID) ||
-    '1Lg7Z3Lh3YE2x-KvX2O7jNdcnP753z3PtQLR-tG8wU-U';
+  private static getStoredSpreadsheetId(): string {
+    const fromStorage =
+      typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.SHEETS_ID) : null;
+    if (fromStorage && fromStorage.trim().length > 5) {
+      return fromStorage.trim();
+    }
+    const fromEnv =
+      typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_GOOGLE_SHEETS_ID as string) : '';
+    if (fromEnv && fromEnv.trim().length > 5) {
+      return fromEnv.trim();
+    }
+    return '1Lg7Z3Lh3YE2x-KvX2O7jNdcnP753z3PtQLR-tG8wU-U';
+  }
 
-  private static appsScriptUrl: string =
-    (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL)) ||
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_APPS_SCRIPT_URL) ||
-    '';
+  private static getStoredAppsScriptUrl(): string {
+    const fromStorage =
+      typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL) : null;
+    if (fromStorage && fromStorage.trim().length > 5) {
+      return fromStorage.trim();
+    }
+    const fromEnv =
+      typeof import.meta !== 'undefined'
+        ? (import.meta.env?.VITE_GOOGLE_APPS_SCRIPT_URL as string)
+        : '';
+    if (fromEnv && fromEnv.trim().length > 5) {
+      return fromEnv.trim();
+    }
+    return '';
+  }
+
+  private static sheetsId: string = GoogleSheetsService.getStoredSpreadsheetId();
+  private static appsScriptUrl: string = GoogleSheetsService.getStoredAppsScriptUrl();
 
   private static accessToken: string =
     (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) ||
@@ -53,18 +76,22 @@ export class GoogleSheetsService {
     '';
 
   static isConfigured(): boolean {
-    return Boolean(this.sheetsId && this.sheetsId.trim().length > 5);
+    return Boolean(this.getSpreadsheetId() && this.getSpreadsheetId().trim().length > 5);
   }
 
   static hasLiveConnection(): boolean {
+    const scriptUrl = this.getAppsScriptUrl();
+    const token = this.getAccessToken();
     return Boolean(
       this.isConfigured() &&
-        ((this.appsScriptUrl && this.appsScriptUrl.trim().length > 10) ||
-          (this.accessToken && this.accessToken.trim().length > 10))
+        ((scriptUrl && scriptUrl.trim().length > 10) || (token && token.trim().length > 10))
     );
   }
 
   static getSpreadsheetId(): string {
+    if (!this.sheetsId || this.sheetsId.trim().length < 5) {
+      this.sheetsId = this.getStoredSpreadsheetId();
+    }
     return this.sheetsId;
   }
 
@@ -76,6 +103,9 @@ export class GoogleSheetsService {
   }
 
   static getAppsScriptUrl(): string {
+    if (!this.appsScriptUrl || this.appsScriptUrl.trim().length < 5) {
+      this.appsScriptUrl = this.getStoredAppsScriptUrl();
+    }
     return this.appsScriptUrl;
   }
 
@@ -106,6 +136,99 @@ export class GoogleSheetsService {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.API_KEY, this.apiKey);
     }
+  }
+
+  /**
+   * Registers a new user directly through the Google Apps Script Web App.
+   *
+   * Flow:
+   * 1. Posts registration payload to the Apps Script Web App URL.
+   * 2. The Apps Script opens the Google Sheet (ID: 1Lg7Z3Lh3YE2x-KvX2O7jNdcnP753z3PtQLR-tG8wU-U),
+   *    accesses the "Users" tab, checks for duplicate username.
+   * 3. If duplicate exists, Apps Script returns: { status: 'error', error: 'User already exists' }
+   * 4. If not, Apps Script generates the next UserId (e.g. U004), appends the new row:
+   *    [nextUserId, name, username, password, 'STUDENT', 'Active', today]
+   * 5. Returns confirmed user record to Qubify.
+   */
+  static async registerUserViaAppsScript(params: {
+    username: string;
+    password: string;
+    name?: string;
+  }): Promise<SheetUserRow> {
+    const appsScriptUrl = this.getAppsScriptUrl();
+    if (!appsScriptUrl || appsScriptUrl.trim().length < 10) {
+      throw new Error(
+        'Unable to write to Google Sheets spreadsheet. Authorization is required. Please configure your Google Apps Script Web App URL in Admin Settings or set VITE_GOOGLE_APPS_SCRIPT_URL.'
+      );
+    }
+
+    const payload = {
+      action: 'register',
+      spreadsheetId: this.getSpreadsheetId(),
+      tab: 'Users',
+      username: params.username.trim(),
+      name: params.name?.trim() || params.username.trim(),
+      password: params.password,
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(appsScriptUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (networkErr) {
+      console.error('Apps Script registration network error:', networkErr);
+      throw new Error('Unable to create account. Please try again.');
+    }
+
+    if (!res.ok) {
+      throw new Error('Unable to create account. Please try again.');
+    }
+
+    let data: any;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      console.error('Failed to parse Apps Script response JSON:', parseErr);
+      throw new Error('Unable to create account. Please try again.');
+    }
+
+    // Check for duplicate username response
+    if (
+      data.error === 'User already exists' ||
+      data.message === 'User already exists' ||
+      (data.status === 'error' &&
+        String(data.message || data.error).toLowerCase().includes('already exists'))
+    ) {
+      throw new Error('User already exists');
+    }
+
+    // Check for general errors
+    if (data.status === 'error' || (!data.success && data.status !== 'success')) {
+      const errorMsg = data.message || data.error;
+      if (errorMsg === 'User already exists') {
+        throw new Error('User already exists');
+      }
+      throw new Error('Unable to create account. Please try again.');
+    }
+
+    // Apps Script confirmed write success
+    const userData = data.user || {};
+    const confirmedUser: SheetUserRow = {
+      userId: userData.userId || 'U004',
+      name: userData.name || params.name || params.username,
+      username: userData.username || params.username,
+      password: params.password,
+      role: 'STUDENT',
+      status: 'Active',
+      createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
+    };
+
+    return confirmedUser;
   }
 
   /**
