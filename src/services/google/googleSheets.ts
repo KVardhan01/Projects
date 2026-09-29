@@ -47,17 +47,17 @@ export class GoogleSheetsService {
   }
 
   private static getStoredAppsScriptUrl(): string {
-    const fromStorage =
-      typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL) : null;
-    if (fromStorage && fromStorage.trim().length > 5) {
-      return fromStorage.trim();
-    }
     const fromEnv =
       typeof import.meta !== 'undefined'
         ? (import.meta.env?.VITE_GOOGLE_APPS_SCRIPT_URL as string)
         : '';
     if (fromEnv && fromEnv.trim().length > 5) {
       return fromEnv.trim();
+    }
+    const fromStorage =
+      typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL) : null;
+    if (fromStorage && fromStorage.trim().length > 5) {
+      return fromStorage.trim();
     }
     return '';
   }
@@ -197,8 +197,11 @@ export class GoogleSheetsService {
       throw new Error('Unable to create account. Please try again.');
     }
 
-    // Check for duplicate username response
+    // 1. When username already exists, it returns:
+    // { "success": false, "message": "User already exists" }
     if (
+      (data.success === false &&
+        (data.message === 'User already exists' || data.error === 'User already exists')) ||
       data.error === 'User already exists' ||
       data.message === 'User already exists' ||
       (data.status === 'error' &&
@@ -207,19 +210,23 @@ export class GoogleSheetsService {
       throw new Error('User already exists');
     }
 
-    // Check for general errors
-    if (data.status === 'error' || (!data.success && data.status !== 'success')) {
-      const errorMsg = data.message || data.error;
-      if (errorMsg === 'User already exists') {
-        throw new Error('User already exists');
-      }
-      throw new Error('Unable to create account. Please try again.');
+    // 2. When there is another error, show the returned error message
+    if (data.success === false || data.status === 'error') {
+      const errorMsg = data.message || data.error || 'Unable to create account. Please try again.';
+      throw new Error(errorMsg);
     }
 
-    // Apps Script confirmed write success
+    // 3. When registration succeeds, Google Apps Script returns:
+    // { "success": true, "message": "Account created successfully", "userId": "U004" }
+    if (data.success !== true && data.status !== 'success') {
+      throw new Error(data.message || 'Unable to create account. Please try again.');
+    }
+
+    // Apps Script confirmed write success to the Users sheet
     const userData = data.user || {};
+    const assignedUserId = data.userId || userData.userId || 'U004';
     const confirmedUser: SheetUserRow = {
-      userId: userData.userId || 'U004',
+      userId: assignedUserId,
       name: userData.name || params.name || params.username,
       username: userData.username || params.username,
       password: params.password,

@@ -205,6 +205,7 @@ function doPost(e) {
           // DUPLICATE USERNAME FOUND: Return exact required error response
           return createJsonResponse({
             status: 'error',
+            success: false,
             error: 'User already exists',
             message: 'User already exists',
           });
@@ -248,6 +249,7 @@ function doPost(e) {
         status: 'success',
         success: true,
         message: 'Account created successfully',
+        userId: nextUserId,
         user: {
           userId: nextUserId,
           name: rawName || rawUsername,

@@ -237,48 +237,13 @@ export class UsersSheetService {
           throw new Error('User already exists');
         }
         console.error('Google Apps Script registration failed:', e);
-        throw new Error('Unable to create account. Please try again.');
+        // Show the returned error message as requested
+        throw new Error(e.message || 'Unable to create account. Please try again.');
       }
-    }
-
-    // Fallback if Apps Script URL is not yet configured but OAuth Access Token exists
-    if (GoogleSheetsService.getAccessToken()) {
-      const nextUserId = this.generateNextUserId();
-      const createdAt = new Date().toISOString().split('T')[0];
-
-      const newRow: SheetUserRow = {
-        userId: nextUserId,
-        name: params.name?.trim() || cleanUsername,
-        username: cleanUsername,
-        password: rawPassword,
-        role: 'STUDENT',
-        status: 'Active',
-        createdAt,
-      };
-
-      const rowValues: (string | number | boolean | null)[] = [
-        newRow.userId,
-        newRow.name,
-        newRow.username,
-        newRow.password || '',
-        'STUDENT',
-        'Active',
-        newRow.createdAt,
-      ];
-
-      try {
-        await GoogleSheetsService.appendRow('Users', rowValues);
-      } catch (e: any) {
-        console.error('Google Sheets write failed:', e);
-        throw new Error('Unable to create account. Please try again.');
-      }
-
-      this.saveUser(newRow);
-      return newRow;
     }
 
     throw new Error(
-      'Unable to write to Google Sheets spreadsheet. Authorization is required. Please configure your Google Apps Script Web App URL in Admin Settings or set VITE_GOOGLE_APPS_SCRIPT_URL.'
+      'Google Apps Script Web App URL is not configured. Please set VITE_GOOGLE_APPS_SCRIPT_URL.'
     );
   }
 

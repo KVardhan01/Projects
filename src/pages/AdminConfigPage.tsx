@@ -197,6 +197,7 @@ function doPost(e) {
         if (existingUser === checkUser) {
           return ContentService.createTextOutput(JSON.stringify({
             status: 'error',
+            success: false,
             error: 'User already exists',
             message: 'User already exists'
           })).setMimeType(ContentService.MimeType.JSON);
@@ -218,6 +219,7 @@ function doPost(e) {
         status: 'success',
         success: true,
         message: 'Account created successfully',
+        userId: nextUserId,
         user: { userId: nextUserId, name: name, username: username, role: 'STUDENT', status: 'Active', createdAt: today }
       })).setMimeType(ContentService.MimeType.JSON);
     }
