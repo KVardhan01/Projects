@@ -60,7 +60,7 @@ export class GoogleSheetsService {
     if (fromStorage && fromStorage.trim().length > 5) {
       return fromStorage.trim();
     }
-    return '';
+    return 'https://script.google.com/macros/s/AKfycbwvKXR90qNvHimyJPT1eddrT296sXP9cUfrrviA0xj8g5p3y8Bgsi6Owmgv4T7rwohU/exec';
   }
 
   private static sheetsId: string = GoogleSheetsService.getStoredSpreadsheetId();
@@ -164,16 +164,10 @@ export class GoogleSheetsService {
       );
     }
 
-    const payload = {
-      action: 'register',
-      spreadsheetId: this.getSpreadsheetId(),
-      tab: 'Users',
-      username: params.username.trim(),
-      name: params.name?.trim() || params.username.trim(),
-      password: params.password,
-    };
+    const username = params.username.trim();
+    const password = params.password;
 
-    logger.info('Registration', `Apps Script request started for username: ${params.username.trim()}`);
+    logger.info('Registration', `Apps Script request started for username: ${username}`);
 
     const browserOrigin =
       typeof window !== 'undefined' && window.location && window.location.origin
@@ -194,7 +188,10 @@ export class GoogleSheetsService {
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          username,
+          password,
+        }),
       });
     } catch (networkErr: any) {
       const errName = networkErr?.name || 'Error';
@@ -205,7 +202,7 @@ export class GoogleSheetsService {
 
       logger.error(
         'Registration',
-        `Apps Script request failed | Stage: Network/CORS-level fetch failure: no HTTP response received | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseReceived: false${errStack}`
+        `Apps Script request failed | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: None | ResponseBody: None${errStack}`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -220,7 +217,7 @@ export class GoogleSheetsService {
     } catch (readErr: any) {
       logger.error(
         'Registration',
-        `Apps Script request failed reading response body | ErrorName: ${readErr?.name || 'Error'} | ErrorMessage: ${readErr?.message || 'Failed to read response body'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseReceived: true`
+        `Apps Script request failed reading response body | ErrorName: ${readErr?.name || 'Error'} | ErrorMessage: ${readErr?.message || 'Failed to read response body'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} ${httpStatusText} | ResponseBody: None`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -236,7 +233,7 @@ export class GoogleSheetsService {
     if (!res.ok) {
       logger.error(
         'Registration',
-        `Apps Script request failed with HTTP ${httpStatus} ${httpStatusText} | Stage: HTTP response error | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true`
+        `Apps Script request failed with HTTP ${httpStatus} ${httpStatusText} | ErrorName: HTTPError | ErrorMessage: HTTP ${httpStatus} ${httpStatusText} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -253,7 +250,7 @@ export class GoogleSheetsService {
 
       logger.error(
         'Registration',
-        `Apps Script request failed: Invalid JSON response | Stage: HTTP response received but JSON parse failed | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true${errStack}`
+        `Apps Script request failed: Invalid JSON response | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}${errStack}`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -268,7 +265,7 @@ export class GoogleSheetsService {
       (data.status === 'error' &&
         String(data.message || data.error).toLowerCase().includes('already exists'))
     ) {
-      logger.warning('Registration', `Duplicate username: ${params.username.trim()}`);
+      logger.warning('Registration', `Duplicate username: ${username}`);
       throw new Error('User already exists');
     }
 
@@ -277,7 +274,7 @@ export class GoogleSheetsService {
       const errorMsg = data.message || data.error || 'Unable to create account. Please try again.';
       logger.error(
         'Registration',
-        `Apps Script request returned failure | Stage: Application response error | ErrorName: AppsScriptError | ErrorMessage: ${errorMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true`
+        `Apps Script request returned failure | ErrorName: AppsScriptError | ErrorMessage: ${errorMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
       );
       throw new Error(errorMsg);
     }
@@ -287,7 +284,7 @@ export class GoogleSheetsService {
     if (data.success !== true && data.status !== 'success') {
       logger.error(
         'Registration',
-        `Google Sheet write failed: ${data.message || 'Unknown response'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | HTTPStatus: ${httpStatus} | HTTPStatusText: ${httpStatusText} | ResponseBody: ${sanitizedBody || '[empty]'} | ResponseReceived: true`
+        `Google Sheet write failed: ${data.message || 'Unknown response'} | ErrorName: WriteError | ErrorMessage: ${data.message || 'Unknown response'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
       );
       throw new Error(data.message || 'Unable to create account. Please try again.');
     }
@@ -297,9 +294,9 @@ export class GoogleSheetsService {
     const assignedUserId = data.userId || userData.userId || 'U004';
     const confirmedUser: SheetUserRow = {
       userId: assignedUserId,
-      name: userData.name || params.name || params.username,
-      username: userData.username || params.username,
-      password: params.password,
+      name: userData.name || params.name || username,
+      username: userData.username || username,
+      password: password,
       role: 'STUDENT',
       status: 'Active',
       createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
