@@ -137,26 +137,27 @@ function qubifyGoogleSheetsProxyPlugin() {
         ? `${appsScriptUrl}${appsScriptUrl.includes('?') ? '&' : '?'}${queryString.slice(1)}`
         : appsScriptUrl;
 
-      // Forward request from Vite server to Google Apps Script
-      // Node.js native fetch follows 302 redirects automatically
+      // Forward request from Vite server to Google Apps Script.
+      // Use text/plain;charset=utf-8 so Apps Script doPost receives the body in e.postData.contents.
       let fetchRes = await fetch(target, {
         method: req.method || 'POST',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
-          'User-Agent': 'Qubify-Vite-Proxy/1.0',
         },
         body: req.method === 'GET' || req.method === 'HEAD' ? undefined : bodyText,
-        redirect: 'follow',
+        redirect: 'manual',
       });
 
-      // Handle redirect if manual or status 3xx is returned with location header
-      if (fetchRes.status >= 300 && fetchRes.status < 400 && fetchRes.headers.get('location')) {
+      // Google Apps Script redirects successful doPost to a GET at script.googleusercontent.com
+      // Follow all 3xx redirects using GET
+      while (
+        (fetchRes.status === 301 || fetchRes.status === 302 || fetchRes.status === 303 || fetchRes.status === 307) &&
+        fetchRes.headers.get('location')
+      ) {
         const redirectUrl = fetchRes.headers.get('location')!;
         fetchRes = await fetch(redirectUrl, {
           method: 'GET',
-          headers: {
-            'User-Agent': 'Qubify-Vite-Proxy/1.0',
-          },
+          redirect: 'manual',
         });
       }
 
@@ -212,13 +213,6 @@ export default defineConfig(() => {
       port: 3000,
       host: '0.0.0.0',
       cors: true,
-      proxy: {
-        '/api/google-sheets': {
-          target: DEFAULT_APPS_SCRIPT_URL,
-          changeOrigin: true,
-          followRedirects: true,
-        },
-      },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
