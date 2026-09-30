@@ -10,7 +10,9 @@ import {
   synthesizeQuantumExpertResponse,
   detectUserIntent,
   extractQiskitCodeDetails,
+  extractErrorDetails,
 } from './src/services/ai/quantumExpertEngine';
+import { QuantumCircuitSimulator } from './src/quantum/QuantumCircuitSimulator';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -245,8 +247,24 @@ function qubifyGeminiPlugin() {
         return res.end(JSON.stringify({ success: false, error: 'Missing prompt in request' }));
       }
 
-      const intent = detectUserIntent(userPrompt);
+      const intent = detectUserIntent(userPrompt, context);
       appendLog('INFO', 'AITutor', `Received question: "${userPrompt.slice(0, 80)}" | Intent: ${intent}`);
+
+      // Extract error details if an active error exists or validate circuit directly
+      let rawError =
+        context.simulationError ||
+        (context.validationErrors && context.validationErrors.length > 0
+          ? context.validationErrors.join('; ')
+          : '');
+
+      if (!rawError && context.circuit) {
+        const val = QuantumCircuitSimulator.validateCircuit(context.circuit);
+        if (!val.isValid && val.errors.length > 0) {
+          rawError = val.errors.join('; ');
+        }
+      }
+
+      const errDetails = rawError ? extractErrorDetails(rawError, context.circuit) : undefined;
 
       // Format workbench quantum context
       const formatted = formatQuantumContext(context);
@@ -256,7 +274,7 @@ You are an expert quantum physicist and quantum computing software engineer.
 Your persona is encouraging, precise, mathematically grounded yet intuitive.
 
 CRITICAL ARCHITECTURE DIRECTIVE:
-1. The USER REQUEST is your PRIMARY TASK.
+1. The USER REQUEST is your PRIMARY TASK. The latest user message has the HIGHEST PRIORITY.
 2. The CURRENT WORKBENCH STATE provided below represents only the current editor state for your reference. Do NOT blindly describe or explain the current workbench circuit unless the user explicitly asks for an explanation of their current circuit!
 3. All user-facing executable quantum circuits MUST BE PYTHON + QISKIT ONLY.
 4. Always format quantum circuits using standard Python Qiskit markdown code blocks:
@@ -268,10 +286,55 @@ qc = QuantumCircuit(...)
 \`\`\`
 Write circuit code directly as top-level sequential statements without wrapping in Python functions or classes, so Qubify's parser can apply it directly to the visual canvas.
 
+STRICT RESPONSE PRIORITY RULES:
+1. Current Circuit / Simulation Error Diagnosis (HIGHEST PRIORITY):
+If the user asks why their circuit or state is failing / has an issue / not working, or if an active circuit validation error exists:
+- You MUST prioritize diagnosing this EXACT ERROR over generic educational information!
+- DO NOT give a long generic textbook explanation of what the state or concept is (e.g. do NOT explain Werner state mathematical definition, density matrix, p-values, or separability criteria).
+- Answer WHAT failed, WHY it failed, WHERE it failed, and HOW to fix it in 3 to 8 direct sentences.
+- Clarify that this is a circuit layout/time-slot validation conflict in the editor, and does NOT mean that the underlying quantum concept or state itself is invalid.
+
+2. Explicit Debugging / Fix Request:
+When asked to fix or debug the circuit, diagnose the issue and provide the corrected code in a \`\`\`python ... \`\`\` code block.
+
+3. Explicit Circuit Generation / Modification Request:
+When asked to create/make/build a quantum state or circuit (and NOT asking why it fails), provide:
+1. What the requested quantum state/circuit is.
+2. The required number of qubits.
+3. The gates required.
+4. The complete runnable Python/Qiskit code.
+5. Concise explanation of why those gates create the requested state.
+6. Explicit comparison with current circuit: state whether the current circuit can/needs to be modified.
+
+4. Specific Question About Current Circuit: Walk through active gates and physical function.
+5. Specific Question About Simulation Results: Analyze active circuit probabilities and measurements.
+6. Conceptual Question: Provide an intuitive educational explanation ONLY when the user explicitly asks for conceptual understanding.
+
 DETECTED REQUEST INTENT: "${intent}"
 
 ${
-  intent === 'generate_circuit'
+  intent === 'error_diagnosis'
+    ? `CRITICAL ERROR-DIAGNOSIS INSTRUCTION:
+The user is asking why their circuit or simulation is failing/has an issue: "${userPrompt}".
+Active circuit error detected: "${errDetails?.rawError || rawError}".
+
+You MUST prioritize diagnosing this EXACT ERROR over generic educational explanations!
+DO NOT give a long generic textbook explanation of what the state or concept is (e.g. do NOT explain Werner state mathematical definition, density matrix, p-values, or separability criteria).
+The user is asking why THEIR CIRCUIT has an issue!
+
+Your answer MUST directly explain:
+1. WHAT failed: The exact validation or simulation error ("${errDetails?.rawError || rawError}").
+2. WHY it failed: The physical and layout reason (e.g., in this circuit representation, a single qubit wire cannot execute multiple operations simultaneously in the same discrete time slot/moment).
+3. WHERE it failed: Specifically identify wire q${errDetails?.affectedQubit ?? 0} and moment ${errDetails?.affectedMoment ?? 2}${
+        errDetails?.conflictingGates && errDetails.conflictingGates.length > 0
+          ? ` with conflicting gates: ${errDetails.conflictingGates.join(' and ')}`
+          : ''
+      }.
+4. HOW to fix it: Actionable instructions (e.g. move one of the overlapping gates to the next sequential moment, or serialize the gates).
+5. Clarify that this is a circuit layout/time-slot validation conflict in the editor, and does NOT mean that the underlying quantum concept or state itself is invalid.
+
+Keep your response concise, clear, and direct (between 3 to 8 sentences). Answer the user's immediate question first!`
+    : intent === 'generate_circuit'
     ? `The user is requesting the CREATION/GENERATION of a quantum state or circuit: "${userPrompt}".
 You MUST fulfill this request by providing:
 1. What the requested quantum state/circuit is.
@@ -339,13 +402,25 @@ ${formatted.activeCode}
                 }
               }
             }
+            const userText =
+              intent === 'error_diagnosis'
+                ? `LATEST USER QUESTION (HIGHEST PRIORITY):
+"${userPrompt}"
+
+ACTIVE CIRCUIT ERROR:
+"${errDetails?.rawError || rawError}"
+AFFECTED QUBIT: q${errDetails?.affectedQubit ?? 0}
+AFFECTED MOMENT: moment ${errDetails?.affectedMoment ?? 2}
+CONFLICTING GATES: ${errDetails?.conflictingGates.join(', ') || 'multiple gates'}
+ACTIVE QISKIT CODE:
+${formatted.activeCode}
+
+PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is failing. You MUST diagnose the active circuit error above directly in 3 to 8 sentences. Explain WHAT failed, WHY it failed, WHERE it failed, and HOW to fix it. DO NOT give a generic textbook definition or mathematical derivation of the quantum state concept!`
+                : `USER REQUEST:\n"${userPrompt}"\n\nINTENT: ${intent}\n\nPlease fulfill this user request following the guidelines.`;
+
             contents.push({
               role: 'user',
-              parts: [
-                {
-                  text: `USER REQUEST:\n"${userPrompt}"\n\nINTENT: ${intent}\n\nPlease fulfill this user request following the guidelines.`,
-                },
-              ],
+              parts: [{ text: userText }],
             });
 
             const genResponse = await ai.models.generateContent({

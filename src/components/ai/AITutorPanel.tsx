@@ -15,6 +15,8 @@ import {
 import { useQuantum } from '../../context/QuantumContext';
 import { GeminiService } from '../../services/ai/geminiClient';
 import { AIMessage, AIContext } from '../../types/ai';
+import { MarkdownRenderer } from '../common/MarkdownRenderer';
+import { QuantumCircuitSimulator } from '../../quantum/QuantumCircuitSimulator';
 
 interface AITutorPanelProps {
   lessonTitle?: string;
@@ -86,13 +88,23 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
     const measurementOps = circuit.operations.filter((op) => op.gate === 'M');
     const numClassicalBits = measurementOps.length > 0 ? measurementOps.length : 0;
 
+    // Check circuit validation directly to capture any instantaneous layout conflicts (e.g. moment collisions)
+    const circuitValidation = QuantumCircuitSimulator.validateCircuit(circuit);
+    const activeErrors: string[] = [];
+    if (simulationError) activeErrors.push(simulationError);
+    if (validationErrors.length > 0) activeErrors.push(...validationErrors);
+    if (!circuitValidation.isValid) activeErrors.push(...circuitValidation.errors);
+    const uniqueErrors = Array.from(new Set(activeErrors));
+    const activeSimulationError = uniqueErrors.length > 0 ? uniqueErrors.join('; ') : undefined;
+
     const context: AIContext = {
       lessonTitle: lessonTitle || circuit.name,
       moduleTitle,
       circuit,
       code: qiskitCode,
       simulation: simulation || undefined,
-      simulationError: simulationError || (validationErrors.length > 0 ? validationErrors.join('; ') : undefined),
+      simulationError: activeSimulationError,
+      validationErrors: uniqueErrors,
       exerciseGoal,
       studentLevel: 'beginner',
       numClassicalBits,
@@ -219,10 +231,14 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
                   : 'bg-slate-950/80 text-slate-200 border border-slate-800 rounded-tl-none'
               }`}
             >
-              <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+              {msg.role === 'assistant' ? (
+                <MarkdownRenderer content={msg.content} onApplyCode={handleApplyCode} />
+              ) : (
+                <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+              )}
 
-              {/* Pure Python Qiskit code snippet */}
-              {msg.codeSnippet && (
+              {/* Pure Python Qiskit code snippet (only shown separately if not already embedded in markdown) */}
+              {msg.codeSnippet && !msg.content.includes(msg.codeSnippet) && (
                 <div className="mt-3 pt-2.5 border-t border-slate-800">
                   <div className="text-[10px] uppercase tracking-wider text-cyan-400 mb-1.5 font-mono font-bold flex items-center justify-between">
                     <div className="flex items-center gap-1.5">

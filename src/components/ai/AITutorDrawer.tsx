@@ -15,6 +15,8 @@ import {
 import { useQuantum } from '../../context/QuantumContext';
 import { GeminiService } from '../../services/ai/geminiClient';
 import { AIMessage, AIContext } from '../../types/ai';
+import { MarkdownRenderer } from '../common/MarkdownRenderer';
+import { QuantumCircuitSimulator } from '../../quantum/QuantumCircuitSimulator';
 
 interface AITutorDrawerProps {
   isOpen: boolean;
@@ -31,7 +33,14 @@ export const AITutorDrawer: React.FC<AITutorDrawerProps> = ({
   moduleTitle,
   exerciseGoal,
 }) => {
-  const { circuit, simulation, qiskitCode, updateFromQiskit } = useQuantum();
+  const {
+    circuit,
+    simulation,
+    qiskitCode,
+    updateFromQiskit,
+    simulationError,
+    validationErrors,
+  } = useQuantum();
 
   const [messages, setMessages] = useState<AIMessage[]>([
     {
@@ -77,12 +86,23 @@ How can I help you today? You can choose a quick topic below or type any questio
     const measurementOps = circuit.operations.filter((op) => op.gate === 'M');
     const numClassicalBits = measurementOps.length > 0 ? measurementOps.length : 0;
 
+    // Check circuit validation directly to capture any instantaneous layout conflicts (e.g. moment collisions)
+    const circuitValidation = QuantumCircuitSimulator.validateCircuit(circuit);
+    const activeErrors: string[] = [];
+    if (simulationError) activeErrors.push(simulationError);
+    if (validationErrors && validationErrors.length > 0) activeErrors.push(...validationErrors);
+    if (!circuitValidation.isValid) activeErrors.push(...circuitValidation.errors);
+    const uniqueErrors = Array.from(new Set(activeErrors));
+    const activeSimulationError = uniqueErrors.length > 0 ? uniqueErrors.join('; ') : undefined;
+
     const context: AIContext = {
       lessonTitle: lessonTitle || circuit.name,
       moduleTitle,
       circuit,
       code: qiskitCode,
       simulation: simulation || undefined,
+      simulationError: activeSimulationError,
+      validationErrors: uniqueErrors,
       exerciseGoal,
       studentLevel: 'beginner',
       numClassicalBits,
@@ -181,9 +201,13 @@ How can I help you today? You can choose a quick topic below or type any questio
                   : 'bg-slate-800/90 text-slate-200 border border-slate-700/60 rounded-tl-none'
               }`}
             >
-              <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+              {msg.role === 'assistant' ? (
+                <MarkdownRenderer content={msg.content} onApplyCode={handleApplyCode} />
+              ) : (
+                <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+              )}
 
-              {msg.codeSnippet && (
+              {msg.codeSnippet && !msg.content.includes(msg.codeSnippet) && (
                 <div className="mt-3 pt-2.5 border-t border-slate-700/60">
                   <div className="text-[10px] uppercase tracking-wider text-cyan-400 mb-1 font-mono flex items-center justify-between">
                     <div className="flex items-center gap-1.5 font-bold">

@@ -4,9 +4,14 @@ import { Copy, Check, Code2 } from 'lucide-react';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  onApplyCode?: (code: string) => void;
 }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
+  content,
+  className = '',
+  onApplyCode,
+}) => {
   if (!content) return null;
 
   // Split content by fenced code blocks: ```lang ... ```
@@ -38,7 +43,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
   }
 
   return (
-    <div className={`space-y-2.5 text-xs leading-relaxed text-slate-200 ${className}`}>
+    <div className={`space-y-2 text-xs leading-relaxed text-slate-200 ${className}`}>
       {parts.map((part, pIdx) => {
         if (part.type === 'code') {
           return (
@@ -46,6 +51,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
               key={`cb-${pIdx}`}
               language={part.language || 'python'}
               code={part.text}
+              onApplyCode={onApplyCode}
             />
           );
         }
@@ -55,7 +61,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
   );
 };
 
-const CodeBlockItem: React.FC<{ language: string; code: string }> = ({ language, code }) => {
+const CodeBlockItem: React.FC<{
+  language: string;
+  code: string;
+  onApplyCode?: (code: string) => void;
+}> = ({ language, code, onApplyCode }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -64,7 +74,11 @@ const CodeBlockItem: React.FC<{ language: string; code: string }> = ({ language,
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const displayLang = language.toLowerCase() === 'python' ? 'Python / Qiskit' : language.toUpperCase();
+  const isPython =
+    language.toLowerCase() === 'python' ||
+    language.toLowerCase() === 'py' ||
+    language.toLowerCase() === 'qiskit';
+  const displayLang = isPython ? 'Python / Qiskit' : language.toUpperCase();
 
   return (
     <div className="my-2.5 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden shadow-lg">
@@ -73,24 +87,37 @@ const CodeBlockItem: React.FC<{ language: string; code: string }> = ({ language,
           <Code2 className="w-3.5 h-3.5 text-cyan-400" />
           <span>{displayLang}</span>
         </div>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex items-center gap-1 hover:text-slate-200 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-800 cursor-pointer"
-          title="Copy code"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3 h-3 text-emerald-400" />
-              <span className="text-emerald-400 font-semibold">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-3 h-3 text-slate-400" />
-              <span>Copy</span>
-            </>
+        <div className="flex items-center gap-2">
+          {isPython && onApplyCode && (
+            <button
+              type="button"
+              onClick={() => onApplyCode(code)}
+              className="flex items-center gap-1 text-cyan-300 hover:text-cyan-100 transition-colors px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 cursor-pointer font-medium text-[10px]"
+              title="Apply to Visual Circuit"
+            >
+              <Check className="w-3 h-3 text-cyan-400" />
+              <span>Apply to Circuit</span>
+            </button>
           )}
-        </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1 hover:text-slate-200 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-800 cursor-pointer"
+            title="Copy code"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3 h-3 text-emerald-400" />
+                <span className="text-emerald-400 font-semibold">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3 h-3 text-slate-400" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       <pre className="p-3 text-[11px] font-mono text-cyan-200 overflow-x-auto leading-relaxed whitespace-pre selection:bg-cyan-900 selection:text-white">
         <code>{code}</code>
@@ -100,7 +127,6 @@ const CodeBlockItem: React.FC<{ language: string; code: string }> = ({ language,
 };
 
 const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
-  // Split into paragraphs / lines
   const lines = rawText.split('\n');
   const elements: React.ReactNode[] = [];
   let currentList: { type: 'ul' | 'ol'; items: string[] } | null = null;
@@ -143,6 +169,17 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
 
     if (!trimmed) {
       flushList();
+      continue;
+    }
+
+    // Heading 4: ####
+    if (trimmed.startsWith('#### ')) {
+      flushList();
+      elements.push(
+        <h4 key={`h4-${i}`} className="text-xs font-bold text-cyan-200/90 font-mono mt-2.5 mb-1">
+          {renderInline(trimmed.slice(5))}
+        </h4>
+      );
       continue;
     }
 
@@ -204,7 +241,7 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
       continue;
     }
 
-    // Ordered List item: 1. , 2.
+    // Ordered List item: 1. , 2. (or **1. ...**)
     const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
     if (olMatch) {
       if (!currentList || currentList.type !== 'ol') {
@@ -212,6 +249,23 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
         currentList = { type: 'ol', items: [] };
       }
       currentList.items.push(olMatch[2]);
+      continue;
+    }
+
+    // Standalone bold line like **Werner State Construction** or **1. What is a Werner State?**
+    if (
+      trimmed.startsWith('**') &&
+      trimmed.endsWith('**') &&
+      trimmed.length >= 5 &&
+      !trimmed.slice(2, -2).includes('**')
+    ) {
+      flushList();
+      const boldHeading = trimmed.slice(2, -2);
+      elements.push(
+        <div key={`bh-${i}`} className="text-xs font-bold text-slate-100 font-mono mt-3 mb-1">
+          {renderInline(boldHeading)}
+        </div>
+      );
       continue;
     }
 
@@ -234,7 +288,7 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
  * - Bold: **text** or __text__
  * - Italic: *text* or _text_
  * - Inline Code: `code`
- * - Math notation clean-up: $|0\rangle$, $|1\rangle$, $$...$$
+ * - Math notation: $|0\rangle$, $|1\rangle$, $$...$$, $\rho_W$
  */
 function renderInline(text: string): React.ReactNode {
   if (!text) return null;
@@ -242,9 +296,8 @@ function renderInline(text: string): React.ReactNode {
   // Clean double-dollar math blocks into clean styled formulas
   let sanitized = text.replace(/\$\$([\s\S]*?)\$\$/g, '[$1]');
 
-  // Tokenize string for code (`...`), bold (**...**), and italic (*...*)
-  // Regex to split by `code`, **bold**, or *italic*
-  const tokenRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|_[^_]+_)/g;
+  // Tokenize string for code (`...`), bold (**...**), italic (*...*), or math ($...$)
+  const tokenRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|_[^_]+_|\$[^$]+\$)/g;
   const parts = sanitized.split(tokenRegex);
 
   return parts.map((part, index) => {
@@ -265,7 +318,8 @@ function renderInline(text: string): React.ReactNode {
 
     // Bold: **...** or __...__
     if (
-      ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('__') && part.endsWith('__'))) &&
+      ((part.startsWith('**') && part.endsWith('**')) ||
+        (part.startsWith('__') && part.endsWith('__'))) &&
       part.length >= 4
     ) {
       const boldContent = part.slice(2, -2);
@@ -278,7 +332,8 @@ function renderInline(text: string): React.ReactNode {
 
     // Italic: *...* or _..._
     if (
-      ((part.startsWith('*') && part.endsWith('*')) || (part.startsWith('_') && part.endsWith('_'))) &&
+      ((part.startsWith('*') && part.endsWith('*')) ||
+        (part.startsWith('_') && part.endsWith('_'))) &&
       part.length >= 2
     ) {
       const italicContent = part.slice(1, -1);
@@ -286,6 +341,19 @@ function renderInline(text: string): React.ReactNode {
         <em key={index} className="italic text-slate-300">
           {italicContent}
         </em>
+      );
+    }
+
+    // Math: $...$
+    if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
+      const mathContent = part.slice(1, -1);
+      return (
+        <span
+          key={index}
+          className="px-1 py-0.2 mx-0.5 font-mono text-cyan-200 bg-cyan-950/40 border border-cyan-800/40 rounded text-[11px]"
+        >
+          {mathContent}
+        </span>
       );
     }
 

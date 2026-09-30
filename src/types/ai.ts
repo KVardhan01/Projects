@@ -1,9 +1,10 @@
 import { CircuitModel, SimulationResult } from './quantum';
 
 export type AIUserIntent =
+  | 'error_diagnosis'
+  | 'debug_circuit'
   | 'generate_circuit'
   | 'modify_circuit'
-  | 'debug_circuit'
   | 'explain_circuit'
   | 'analyze_simulation'
   | 'concept_question';
@@ -40,6 +41,7 @@ export interface AIContext {
   code?: string;
   simulation?: Partial<SimulationResult>;
   simulationError?: string;
+  validationErrors?: string[];
   exerciseGoal?: string;
   studentLevel?: 'beginner' | 'intermediate' | 'advanced';
   recentMistakes?: string[];
