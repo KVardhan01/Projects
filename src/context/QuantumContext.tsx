@@ -12,6 +12,9 @@ import { NoiseModel } from '../quantum/NoiseModel';
 import { QiskitGenerator } from '../quantum/parser/QiskitGenerator';
 import { QiskitParser } from '../quantum/parser/QiskitParser';
 import { LocalDatabase } from '../services/storage/localDatabase';
+import { StructuredCircuitData } from '../types/ai';
+import { convertStructuredCircuitToModel } from '../quantum/circuitModelConverter';
+import { QuantumCircuitSimulator } from '../quantum/QuantumCircuitSimulator';
 
 const defaultCircuit: CircuitModel = {
   id: 'circuit-bell-interactive',
@@ -57,6 +60,7 @@ interface QuantumContextType {
   setSelectedGate: (gate: GateType | null) => void;
   runSimulation: () => Promise<SimulationResult | null>;
   updateFromQiskit: (code: string) => { success: boolean; errors: string[] };
+  applyGeneratedCircuit: (data: StructuredCircuitData) => { success: boolean; errors: string[] };
   undo: () => void;
   redo: () => void;
   saveCircuit: () => void;
@@ -276,6 +280,42 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true, errors: [] };
   };
 
+  /**
+   * Actionable AI Circuit Application:
+   * Converts AI structured circuit result into Qubify's canonical internal CircuitModel,
+   * validates gates/timing, updates visual circuit, synchronizes Qiskit Python code,
+   * applies any designated noise settings (e.g. depolarizing channel for Werner state),
+   * and refreshes the simulator.
+   */
+  const applyGeneratedCircuit = (data: StructuredCircuitData): { success: boolean; errors: string[] } => {
+    if (data.action === 'explain_limitation' || data.isSupportedBySimulator === false) {
+      const err = data.unsupportedReason || 'This circuit cannot be represented in the current simulator.';
+      setValidationErrors([err]);
+      setSimulationError(err);
+      return { success: false, errors: [err] };
+    }
+
+    const converted = convertStructuredCircuitToModel(data, circuit);
+    if (!converted.isValid || converted.errors.length > 0) {
+      setValidationErrors(converted.errors);
+      setSimulationError(`Circuit application error: ${converted.errors.join('; ')}`);
+      return { success: false, errors: converted.errors };
+    }
+
+    // If noise settings specified (e.g. for Werner state depolarizing noise simulation)
+    if (data.noiseSettings) {
+      setNoiseSettingsState((prev) => ({
+        ...prev,
+        ...data.noiseSettings,
+      }));
+    }
+
+    setValidationErrors([]);
+    setSimulationError(null);
+    pushHistory(converted.circuit, 'code');
+    return { success: true, errors: [] };
+  };
+
   const undo = () => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
@@ -343,6 +383,7 @@ export const QuantumProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setSelectedGate,
         runSimulation,
         updateFromQiskit,
+        applyGeneratedCircuit,
         undo,
         redo,
         saveCircuit,

@@ -14,3 +14,7 @@
 2026-09-30 10:08:02 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "Explain what a Werner state is."
 2026-09-30 10:08:02 | INFO | AITutor | Received question: "Create Werner States" | Intent: generate_circuit
 2026-09-30 10:08:23 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "Create Werner States"
+2026-09-30 10:22:34 | INFO | AITutor | Received question: "create Werner state" | Intent: generate_circuit
+2026-09-30 10:22:40 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "create Werner state"
+2026-09-30 10:23:32 | INFO | AITutor | Received question: "Create a Bell state" | Intent: generate_circuit
+2026-09-30 10:23:41 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "Create a Bell state"

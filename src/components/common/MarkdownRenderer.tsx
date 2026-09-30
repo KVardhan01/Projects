@@ -4,13 +4,11 @@ import { Copy, Check, Code2 } from 'lucide-react';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
-  onApplyCode?: (code: string) => void;
 }
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
   className = '',
-  onApplyCode,
 }) => {
   if (!content) return null;
 
@@ -51,7 +49,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               key={`cb-${pIdx}`}
               language={part.language || 'python'}
               code={part.text}
-              onApplyCode={onApplyCode}
             />
           );
         }
@@ -64,8 +61,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 const CodeBlockItem: React.FC<{
   language: string;
   code: string;
-  onApplyCode?: (code: string) => void;
-}> = ({ language, code, onApplyCode }) => {
+}> = ({ language, code }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -87,37 +83,24 @@ const CodeBlockItem: React.FC<{
           <Code2 className="w-3.5 h-3.5 text-cyan-400" />
           <span>{displayLang}</span>
         </div>
-        <div className="flex items-center gap-2">
-          {isPython && onApplyCode && (
-            <button
-              type="button"
-              onClick={() => onApplyCode(code)}
-              className="flex items-center gap-1 text-cyan-300 hover:text-cyan-100 transition-colors px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 cursor-pointer font-medium text-[10px]"
-              title="Apply to Visual Circuit"
-            >
-              <Check className="w-3 h-3 text-cyan-400" />
-              <span>Apply to Circuit</span>
-            </button>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1 hover:text-slate-200 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-800 cursor-pointer"
+          title="Copy code"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-400 font-semibold">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3 text-slate-400" />
+              <span>Copy</span>
+            </>
           )}
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-1 hover:text-slate-200 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-800 cursor-pointer"
-            title="Copy code"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3 h-3 text-emerald-400" />
-                <span className="text-emerald-400 font-semibold">Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3 text-slate-400" />
-                <span>Copy</span>
-              </>
-            )}
-          </button>
-        </div>
+        </button>
       </div>
       <pre className="p-3 text-[11px] font-mono text-cyan-200 overflow-x-auto leading-relaxed whitespace-pre selection:bg-cyan-900 selection:text-white">
         <code>{code}</code>

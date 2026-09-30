@@ -1,4 +1,4 @@
-import { AIContext, AIUserIntent, StructuredCircuitData } from '../../types/ai';
+import { AIContext, AIUserIntent, StructuredCircuitData, StructuredGate } from '../../types/ai';
 import { CircuitModel } from '../../types/quantum';
 import { QuantumCircuitSimulator } from '../../quantum/QuantumCircuitSimulator';
 
@@ -317,13 +317,19 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
 }
 
 /**
- * Extracts Qiskit circuit metadata from a Python code string:
+ * Extracts Qiskit circuit metadata and structured gate operations from Python code:
  * - Number of qubits
  * - List of gate operations
+ * - Structured gate details ({ type, qubits, parameters })
+ * - Verification whether circuit is supported by Qubify's simulator
  */
 export function extractQiskitCodeDetails(code: string): {
   requiredQubits: number;
   gates: string[];
+  gateTypes: string[];
+  structuredGates: StructuredGate[];
+  isSupportedBySimulator: boolean;
+  unsupportedReason?: string;
 } {
   let requiredQubits = 2;
   const qcMatch = code.match(/QuantumCircuit\((\d+)/);
@@ -332,20 +338,76 @@ export function extractQiskitCodeDetails(code: string): {
   }
 
   const gatesSet = new Set<string>();
-  const gateMatches = code.matchAll(/qc\.([a-zA-Z_]\w*)\s*\(/g);
-  for (const match of gateMatches) {
-    const methodName = match[1].toLowerCase();
-    if (['h', 'x', 'y', 'z', 's', 't', 'cx', 'cnot', 'swap', 'measure', 'measure_all'].includes(methodName)) {
-      if (methodName === 'cnot') gatesSet.add('CX');
-      else if (methodName === 'measure_all') gatesSet.add('M');
-      else if (methodName === 'measure') gatesSet.add('M');
-      else gatesSet.add(methodName.toUpperCase());
+  const structuredGates: StructuredGate[] = [];
+  const lines = code.split('\n');
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    // Single qubit gates: qc.h(0), qc.x(1), qc.y(0), qc.z(0), qc.s(0), qc.t(0)
+    const singleMatch = line.match(/qc\.([a-zA-Z_]\w*)\s*\(\s*(\d+)\s*\)/i);
+    if (singleMatch) {
+      const name = singleMatch[1].toLowerCase();
+      const q = parseInt(singleMatch[2], 10);
+      let type = name.toUpperCase();
+      if (['h', 'x', 'y', 'z', 's', 't'].includes(name)) {
+        gatesSet.add(type);
+        structuredGates.push({ type, qubits: [q], parameters: [] });
+      }
+      continue;
     }
+
+    // Two qubit gates: qc.cx(0, 1), qc.cnot(0, 1), qc.swap(0, 1)
+    const twoMatch = line.match(/qc\.(cx|cnot|swap)\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/i);
+    if (twoMatch) {
+      const name = twoMatch[1].toLowerCase();
+      const c = parseInt(twoMatch[2], 10);
+      const t = parseInt(twoMatch[3], 10);
+      const type = name === 'cnot' ? 'CX' : name.toUpperCase();
+      gatesSet.add(type);
+      structuredGates.push({ type, qubits: [c, t], parameters: [] });
+      continue;
+    }
+
+    // Measurement operations
+    if (line.includes('qc.measure_all')) {
+      gatesSet.add('M');
+      for (let i = 0; i < requiredQubits; i++) {
+        structuredGates.push({ type: 'M', qubits: [i], parameters: [] });
+      }
+      continue;
+    }
+    const measMatch = line.match(/qc\.measure\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/i);
+    if (measMatch) {
+      const q = parseInt(measMatch[1], 10);
+      gatesSet.add('M');
+      structuredGates.push({ type: 'M', qubits: [q], parameters: [] });
+      continue;
+    }
+  }
+
+  const supportedGateNames = ['H', 'X', 'Y', 'Z', 'S', 'T', 'CX', 'SWAP', 'M'];
+  const unsupported = Array.from(gatesSet).filter((g) => !supportedGateNames.includes(g));
+
+  let isSupportedBySimulator = true;
+  let unsupportedReason: string | undefined;
+
+  if (requiredQubits > 10) {
+    isSupportedBySimulator = false;
+    unsupportedReason = `Circuit width (${requiredQubits} qubits) exceeds simulator limit (10 qubits).`;
+  } else if (unsupported.length > 0) {
+    isSupportedBySimulator = false;
+    unsupportedReason = `Circuit uses unsupported gate operations: ${unsupported.join(', ')}.`;
   }
 
   return {
     requiredQubits,
     gates: Array.from(gatesSet),
+    gateTypes: Array.from(gatesSet),
+    structuredGates,
+    isSupportedBySimulator,
+    unsupportedReason,
   };
 }
 
@@ -575,12 +637,12 @@ Click **"Apply to Visual Circuit"** below to load this repaired sequence into yo
   // PRIORITY 3: CIRCUIT GENERATION REQUESTS
   // =========================================================================
 
-  // Werner State Generation
+  // Werner State Generation (Mixed state realized via Bell singlet core + Depolarizing Noise channel)
   if (intent === 'generate_circuit' && p.includes('werner')) {
     const qiskitCode = `from qiskit import QuantumCircuit
 
-# 2-qubit Werner State base circuit (Bell Singlet state |Ψ-⟩)
-# In Qubify, configure the depolarizing noise setting (1-p) to adjust the Werner mixing ratio p.
+# 2-qubit Bell Singlet core circuit (|Ψ-⟩) for Werner State
+# In Qubify, the depolarizing noise model (rate 1-p) is enabled to simulate the mixed ensemble
 qc = QuantumCircuit(2)
 
 # Step 1: Prepare |11> computational basis
@@ -593,42 +655,34 @@ qc.h(0)
 # Step 3: Entangle q1 with q0 using CNOT
 qc.cx(0, 1)
 
-# Step 4: Apply Pauli-Z to create the singlet relative phase: (|01> - |10>)/√2
+# Step 4: Apply Pauli-Z to create relative phase: (|01> - |10>)/√2
 qc.z(0)`;
 
-    const reply = `### Werner State Construction
+    const reply = `### Werner State Construction & Depolarizing Noise Configuration
 
 #### 1. What is a Werner State?
-In quantum information theory, a **Werner State** $\\rho_W$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell singlet state $|\\Psi^-\\rangle$ and the maximally mixed white-noise state $\\frac{I_4}{4}$:
+A **Werner State** $\\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell singlet state $|\\Psi^-\\rangle$ and the maximally mixed white-noise state $\\frac{I_4}{4}$:
 $$\\rho_W(p) = p |\\Psi^-\\rangle\\langle\\Psi^-| + \\frac{1-p}{4} I_4, \\quad p \\in [0, 1]$$
 - When $p = 1$: The state is the pure Bell singlet state $|\\Psi^-\\rangle = \\frac{|01\\rangle - |10\\rangle}{\\sqrt{2}}$.
 - When $p > \\frac{1}{3}$: The state is entangled and violates the Peres-Horodecki separability criterion.
 - When $p \\le \\frac{1}{3}$: The state is separable.
 
-#### 2. Required Number of Qubits
-**2 Qubits** ($q_0$ and $q_1$).
+#### 2. Simulator Implementation & Depolarizing Representation
+An exact Werner state is an open-system statistical mixture ($\\text{Tr}(\\rho^2) < 1$). Qubify's simulator represents this by synthesizing the pure Bell singlet core state $|\\Psi^-\\rangle$ and applying the **Depolarizing Noise Channel** with rate $(1-p)$ (configured at $0.25$ for $p=0.75$) to simulate stochastic white-noise mixing.
 
-#### 3. Required Gates
-- **X Gates**: Applied to $q_0$ and $q_1$ to initialize the state to $|11\\rangle$.
-- **H Gate**: Applied to $q_0$ to create superposition.
-- **CX (CNOT) Gate**: With control $q_0$ and target $q_1$ to establish entanglement.
-- **Z Gate**: Applied to $q_0$ to flip the relative phase, isolating the anti-symmetric singlet $|\\Psi^-\\rangle$.
-
-#### 4. Complete Qiskit Python Code
+#### 3. Complete Qiskit Python Code
 \`\`\`python
 ${qiskitCode}
 \`\`\`
 
-#### 5. Why These Gates Create the State
-1. Starting from the default ground state $|00\\rangle$, the Pauli-X gates on both wires prepare $|11\\rangle$.
-2. The Hadamard gate on $q_0$ puts the control wire into superposition: $\\frac{|01\\rangle - |11\\rangle}{\\sqrt{2}}$.
-3. The CNOT gate flips target $q_1$ whenever $q_0$ is 1, creating the entangled state $\\frac{|01\\rangle - |10\\rangle}{\\sqrt{2}} = |\\Psi^-\\rangle$.
-4. In Qubify, you can adjust the platform's **Depolarizing Noise** slider in the simulation settings to simulate the $(1 - p)$ white noise mixing parameter!
+#### 4. Required Gates for Bell Singlet Core
+- **X Gates** ($q_0, q_1$): Prepare computational basis $|11\\rangle$.
+- **H Gate** ($q_0$): Creates superposition on $q_0$.
+- **CX (CNOT)** ($q_0 \\to q_1$): Entangles $q_1$ conditionally with $q_0$.
+- **Z Gate** ($q_0$): Introduces anti-symmetric relative phase, producing $|\\Psi^-\\rangle$.
 
-#### 6. Can the Current Circuit Be Modified?
-**Yes.** Your active circuit currently contains **${currentQubits} qubit(s)** and **${ops.length} gate(s)**. Applying the code replaces the current sequence with this 2-qubit Werner base circuit.
-
-Click **"Apply to Visual Circuit"** below to load this circuit directly onto your visual canvas!`;
+#### 5. Can the Current Circuit Be Modified?
+**Yes.** Clicking **"Apply to Visual Circuit"** below will load the Bell singlet core onto your visual canvas and configure the depolarizing noise model in the simulator.`;
 
     return {
       reply,
@@ -640,17 +694,33 @@ Click **"Apply to Visual Circuit"** below to load this circuit directly onto you
       canModifyCurrentCircuit: true,
       structuredData: {
         intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
         request: userPrompt,
         explanation: reply,
         qiskitCode,
+        qubits: 2,
         requiredQubits: 2,
-        gates: ['X', 'H', 'CX', 'Z'],
+        gates: [
+          { type: 'X', qubits: [0], parameters: [] },
+          { type: 'X', qubits: [1], parameters: [] },
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+          { type: 'Z', qubits: [0], parameters: [] },
+        ],
+        noiseSettings: {
+          enabled: true,
+          depolarizingRate: 0.25,
+          bitFlipRate: 0,
+          phaseFlipRate: 0,
+          readoutErrorRate: 0,
+        },
         canModifyCurrentCircuit: true,
       },
     };
   }
 
-  // GHZ State Generation
+  // GHZ State Generation (Fully supported pure state)
   if (intent === 'generate_circuit' && (p.includes('ghz') || p.includes('greenberger'))) {
     const targetQubits = Math.max(3, currentQubits);
     const qiskitCode = `from qiskit import QuantumCircuit
@@ -705,17 +775,24 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your visual 
       canModifyCurrentCircuit: true,
       structuredData: {
         intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
         request: userPrompt,
         explanation: reply,
         qiskitCode,
+        qubits: targetQubits,
         requiredQubits: targetQubits,
-        gates: ['H', 'CX'],
+        gates: [
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+          { type: 'CX', qubits: [1, 2], parameters: [] },
+        ],
         canModifyCurrentCircuit: true,
       },
     };
   }
 
-  // Bell State Generation
+  // Bell State Generation (Fully supported pure state)
   if (intent === 'generate_circuit' && (p.includes('bell') || p.includes('entangle'))) {
     const qiskitCode = `from qiskit import QuantumCircuit
 
@@ -765,11 +842,115 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your visual 
       canModifyCurrentCircuit: true,
       structuredData: {
         intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
         request: userPrompt,
         explanation: reply,
         qiskitCode,
+        qubits: 2,
         requiredQubits: 2,
-        gates: ['H', 'CX'],
+        gates: [
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+        ],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // W State Generation
+  if (intent === 'generate_circuit' && p.includes('w state')) {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# 3-qubit W State: (|001> + |010> + |100>) / sqrt(3)
+qc = QuantumCircuit(3)
+
+qc.x(0)
+qc.h(1)
+qc.cx(1, 2)
+qc.cx(0, 1)`;
+
+    const reply = `### W State Construction
+
+The **W State** is a 3-qubit entangled state with equal superposition of single-excitation states:
+$$|W\\rangle = \\frac{|001\\rangle + |010\\rangle + |100\\rangle}{\\sqrt{3}}$$
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 3,
+      gates: ['X', 'H', 'CX'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: 3,
+        requiredQubits: 3,
+        gates: [
+          { type: 'X', qubits: [0], parameters: [] },
+          { type: 'H', qubits: [1], parameters: [] },
+          { type: 'CX', qubits: [1, 2], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+        ],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // Quantum Teleportation
+  if (intent === 'generate_circuit' && p.includes('teleport')) {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# Quantum Teleportation Protocol
+qc = QuantumCircuit(3)
+
+# Step 1: Entangled Bell pair between Alice (q1) and Bob (q2)
+qc.h(1)
+qc.cx(1, 2)
+
+# Step 2: Alice entangles message qubit (q0) with her Bell half (q1)
+qc.cx(0, 1)
+qc.h(0)`;
+
+    const reply = `### Quantum Teleportation Protocol
+
+This circuit sets up the standard 3-qubit teleportation channel:
+1. Qubits $q_1$ and $q_2$ form an entangled EPR pair shared between Alice and Bob.
+2. Alice interacts message state on $q_0$ with $q_1$ using CNOT and Hadamard.
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 3,
+      gates: ['H', 'CX'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: 3,
+        requiredQubits: 3,
+        gates: [
+          { type: 'H', qubits: [1], parameters: [] },
+          { type: 'CX', qubits: [1, 2], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+          { type: 'H', qubits: [0], parameters: [] },
+        ],
         canModifyCurrentCircuit: true,
       },
     };

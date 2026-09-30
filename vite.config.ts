@@ -343,6 +343,9 @@ You MUST fulfill this request by providing:
 4. The complete, runnable Python/Qiskit code in a standard \`\`\`python ... \`\`\` code block.
 5. A concise explanation of why those gates create the requested state.
 6. A comparison with the current circuit: explicitly state whether the current circuit can/needs to be modified or replaced to produce it.
+7. Simulator Compatibility Note:
+- For pure states (e.g. Bell state, GHZ state, W state, Teleportation, Superposition, Grover, Deutsch-Jozsa), note that the circuit is fully supported by Qubify and ready to be applied to the visual canvas.
+- For Werner states specifically: Explain that an exact Werner state is a statistical mixed state. Qubify realizes this by synthesizing the pure Bell singlet core state (|Ψ-⟩) and configuring the depolarizing noise channel in the simulator to simulate the mixed ensemble. Provide the complete runnable Bell singlet Qiskit circuit and explain that clicking "Apply to Visual Circuit" will load the circuit and configure the depolarizing noise model.
 Do NOT claim that the circuit was changed unless the application actually changes the circuit.`
     : intent === 'explain_circuit'
     ? `The user wants you to explain their CURRENT circuit. Walk through their active gates and explain their physical function.`
@@ -445,15 +448,29 @@ PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is fai
 
       let qiskitCode: string | undefined;
       let requiredQubits: number | undefined;
-      let gates: string[] | undefined;
+      let qubits: number | undefined;
+      let gates: any[] | undefined;
+      let action: 'apply_to_visual_circuit' | 'explain_limitation' | 'none' = 'none';
+      let isSupportedBySimulator = true;
+      let unsupportedReason: string | undefined;
+      let noiseSettings: any = undefined;
+      let expertRes: any = undefined;
+
+      const pLower = userPrompt.toLowerCase();
+      const isWernerRequest = pLower.includes('werner');
 
       if (!replyText) {
         // Use quantum expert synthesis engine
-        const expertRes = synthesizeQuantumExpertResponse(userPrompt, context);
+        expertRes = synthesizeQuantumExpertResponse(userPrompt, context);
         replyText = expertRes.reply;
         qiskitCode = expertRes.qiskitCode;
         requiredQubits = expertRes.requiredQubits;
-        gates = expertRes.gates;
+        qubits = expertRes.requiredQubits;
+        gates = expertRes.structuredData?.gates || expertRes.gates;
+        noiseSettings = expertRes.structuredData?.noiseSettings;
+        action = expertRes.structuredData?.action || (expertRes.qiskitCode ? 'apply_to_visual_circuit' : 'none');
+        isSupportedBySimulator = expertRes.structuredData?.isSupportedBySimulator !== false;
+        unsupportedReason = expertRes.structuredData?.unsupportedReason;
         appendLog('INFO', 'AITutor', `Served response via quantum reasoning engine for "${userPrompt.slice(0, 40)}"`);
       } else {
         const codeMatch = replyText.match(/```python([\s\S]*?)```/);
@@ -461,18 +478,43 @@ PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is fai
           qiskitCode = codeMatch[1].trim();
           const details = extractQiskitCodeDetails(qiskitCode);
           requiredQubits = details.requiredQubits;
-          gates = details.gates;
+          qubits = details.requiredQubits;
+          gates = details.structuredGates;
+          isSupportedBySimulator = details.isSupportedBySimulator;
+          unsupportedReason = details.unsupportedReason;
+
+          if (isWernerRequest && (intent === 'generate_circuit' || intent === 'modify_circuit')) {
+            action = 'apply_to_visual_circuit';
+            isSupportedBySimulator = true;
+            noiseSettings = {
+              enabled: true,
+              depolarizingRate: 0.25,
+              bitFlipRate: 0,
+              phaseFlipRate: 0,
+              readoutErrorRate: 0,
+            };
+          } else if (
+            isSupportedBySimulator &&
+            (intent === 'generate_circuit' || intent === 'modify_circuit' || intent === 'debug_circuit')
+          ) {
+            action = 'apply_to_visual_circuit';
+          }
         }
       }
 
       const structuredData: any = {
         intent,
+        action,
         request: userPrompt,
         explanation: replyText,
         qiskitCode,
-        requiredQubits,
+        qubits: qubits || requiredQubits,
+        requiredQubits: requiredQubits || qubits,
         gates,
-        canModifyCurrentCircuit: intent === 'generate_circuit' || intent === 'modify_circuit',
+        noiseSettings,
+        canModifyCurrentCircuit: action === 'apply_to_visual_circuit',
+        isSupportedBySimulator,
+        unsupportedReason,
       };
 
       res.writeHead(200, {
@@ -483,12 +525,16 @@ PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is fai
         JSON.stringify({
           success: true,
           intent,
+          action,
           request: userPrompt,
           reply: replyText,
           explanation: replyText,
           qiskitCode,
-          requiredQubits,
+          qubits: qubits || requiredQubits,
+          requiredQubits: requiredQubits || qubits,
           gates,
+          isSupportedBySimulator,
+          unsupportedReason,
           structuredData,
         })
       );

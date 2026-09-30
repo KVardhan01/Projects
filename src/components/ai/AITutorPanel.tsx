@@ -35,6 +35,7 @@ export const AITutorPanel: React.FC<AITutorPanelProps> = ({
     qiskitCode,
     simulationError,
     updateFromQiskit,
+    applyGeneratedCircuit,
     validationErrors,
   } = useQuantum();
 
@@ -142,6 +143,30 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
     }
   };
 
+  const handleApplyCircuit = (msg: AIMessage) => {
+    let result: { success: boolean; errors: string[] };
+
+    if (msg.structuredData && msg.structuredData.action === 'apply_to_visual_circuit') {
+      result = applyGeneratedCircuit(msg.structuredData);
+    } else if (msg.codeSnippet) {
+      result = updateFromQiskit(msg.codeSnippet);
+    } else {
+      result = { success: false, errors: ['No circuit data found'] };
+    }
+
+    if (result.success) {
+      const hasNoise = Boolean(msg.structuredData?.noiseSettings?.enabled);
+      setAppliedNotice(
+        hasNoise
+          ? 'Successfully applied circuit and depolarizing noise configuration to visual canvas!'
+          : 'Successfully synchronized circuit with visual canvas!'
+      );
+    } else {
+      setAppliedNotice(`Could not apply: ${result.errors[0] || 'Invalid code'}`);
+    }
+    setTimeout(() => setAppliedNotice(null), 3500);
+  };
+
   const handleApplyCode = (code: string) => {
     const result = updateFromQiskit(code);
     if (result.success) {
@@ -232,35 +257,69 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
               }`}
             >
               {msg.role === 'assistant' ? (
-                <MarkdownRenderer content={msg.content} onApplyCode={handleApplyCode} />
+                <MarkdownRenderer content={msg.content} />
               ) : (
                 <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
               )}
 
-              {/* Pure Python Qiskit code snippet (only shown separately if not already embedded in markdown) */}
-              {msg.codeSnippet && !msg.content.includes(msg.codeSnippet) && (
+              {/* Actionable Circuit Generation / Debugging Panel */}
+              {(msg.structuredData?.action === 'apply_to_visual_circuit' ||
+                (msg.codeSnippet &&
+                  msg.structuredData?.isSupportedBySimulator !== false &&
+                  msg.structuredData?.action !== 'explain_limitation' &&
+                  (msg.intent === 'generate_circuit' ||
+                    msg.intent === 'debug_circuit' ||
+                    msg.intent === 'modify_circuit'))) && (
                 <div className="mt-3 pt-2.5 border-t border-slate-800">
                   <div className="text-[10px] uppercase tracking-wider text-cyan-400 mb-1.5 font-mono font-bold flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Code2 className="w-3.5 h-3.5 text-cyan-400" />
                       <span>Generated Qiskit circuit</span>
                     </div>
-                    {msg.structuredData?.requiredQubits && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
-                        {msg.structuredData.requiredQubits} Qubit{msg.structuredData.requiredQubits > 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {msg.structuredData?.noiseSettings?.enabled && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/80 border border-amber-700/80 text-amber-300 font-mono">
+                          Depolarizing Noise ({msg.structuredData.noiseSettings.depolarizingRate || 0.25})
+                        </span>
+                      )}
+                      {(msg.structuredData?.qubits || msg.structuredData?.requiredQubits) && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono">
+                          {msg.structuredData?.qubits || msg.structuredData?.requiredQubits} Qubit
+                          {(msg.structuredData?.qubits || msg.structuredData?.requiredQubits || 0) > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <pre className="bg-slate-900 p-2.5 rounded-xl text-[11px] font-mono text-cyan-200 overflow-x-auto border border-slate-800 leading-relaxed">
-                    {msg.codeSnippet}
-                  </pre>
+                  {(msg.codeSnippet || msg.structuredData?.qiskitCode) && (
+                    <pre className="bg-slate-900 p-2.5 rounded-xl text-[11px] font-mono text-cyan-200 overflow-x-auto border border-slate-800 leading-relaxed max-h-48">
+                      {msg.codeSnippet || msg.structuredData?.qiskitCode}
+                    </pre>
+                  )}
                   <button
-                    onClick={() => handleApplyCode(msg.codeSnippet!)}
-                    className="mt-2 w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-500/10"
+                    onClick={() => handleApplyCircuit(msg)}
+                    className="mt-2.5 w-full py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-cyan-500/10 active:scale-[0.99]"
                   >
                     <Check className="w-3.5 h-3.5" />
                     <span>Apply to Visual Circuit</span>
                   </button>
+                </div>
+              )}
+
+              {/* Informative notice if circuit cannot be represented in current simulator (e.g. Werner mixed state) */}
+              {msg.structuredData?.isSupportedBySimulator === false && (
+                <div className="mt-3 pt-2.5 border-t border-slate-800">
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <div className="font-semibold text-amber-300 text-xs">
+                        Simulator Limitation Notice
+                      </div>
+                      <div className="text-[11px] text-amber-200/90 leading-relaxed">
+                        {msg.structuredData.unsupportedReason ||
+                          'This quantum state is a statistical mixed state requiring density-matrix simulation. Qubify operates on pure state-vectors, so it cannot be directly applied as a static visual circuit.'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 

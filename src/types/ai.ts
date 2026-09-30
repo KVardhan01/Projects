@@ -1,4 +1,4 @@
-import { CircuitModel, SimulationResult } from './quantum';
+import { CircuitModel, SimulationResult, NoiseSettings } from './quantum';
 
 export type AIUserIntent =
   | 'error_diagnosis'
@@ -9,14 +9,25 @@ export type AIUserIntent =
   | 'analyze_simulation'
   | 'concept_question';
 
+export interface StructuredGate {
+  type: string;
+  qubits: number[];
+  parameters?: any[];
+}
+
 export interface StructuredCircuitData {
   intent: AIUserIntent;
+  action?: 'apply_to_visual_circuit' | 'explain_limitation' | 'none';
   request?: string;
   explanation?: string;
   qiskitCode?: string;
+  qubits?: number;
   requiredQubits?: number;
-  gates?: string[];
+  gates?: Array<StructuredGate | string>;
+  noiseSettings?: Partial<NoiseSettings>;
   canModifyCurrentCircuit?: boolean;
+  isSupportedBySimulator?: boolean;
+  unsupportedReason?: string;
 }
 
 export interface AIMessage {
