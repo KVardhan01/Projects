@@ -89,17 +89,18 @@ How can I help you today? You can choose a quick topic below or type any questio
     };
 
     try {
-      const reply = await GeminiService.chat(userText, context, messages);
-
-      // Check if reply contains Python code that can be applied
-      const codeMatch = reply.match(/```python([\s\S]*?)```/);
-      const codeSnippet = codeMatch ? codeMatch[1].trim() : undefined;
+      const chatRes = await GeminiService.chat(userText, context, messages);
+      const replyContent = chatRes.content;
+      const codeSnippet =
+        chatRes.codeSnippet || chatRes.content.match(/```python([\s\S]*?)```/)?.[1]?.trim();
 
       const aiMsg: AIMessage = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
-        content: reply,
+        content: replyContent,
         codeSnippet,
+        intent: chatRes.intent,
+        structuredData: chatRes.structuredData,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -184,8 +185,16 @@ How can I help you today? You can choose a quick topic below or type any questio
 
               {msg.codeSnippet && (
                 <div className="mt-3 pt-2.5 border-t border-slate-700/60">
-                  <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1 font-mono">
-                    AI Suggested Qiskit Code
+                  <div className="text-[10px] uppercase tracking-wider text-cyan-400 mb-1 font-mono flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Generated Qiskit circuit</span>
+                    </div>
+                    {msg.structuredData?.requiredQubits && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-cyan-300">
+                        {msg.structuredData.requiredQubits} Qubit{msg.structuredData.requiredQubits > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                   <pre className="bg-slate-950 p-2 rounded text-[11px] font-mono text-cyan-300 overflow-x-auto border border-slate-800">
                     {msg.codeSnippet}

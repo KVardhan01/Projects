@@ -1,6 +1,19 @@
-import { AIContext, AIMessage } from '../../types/ai';
+import { AIContext, AIMessage, AIUserIntent, StructuredCircuitData } from '../../types/ai';
 import { logger } from '../logger';
-import { synthesizeQuantumExpertResponse, formatQuantumContext } from './quantumExpertEngine';
+import {
+  synthesizeQuantumExpertResponse,
+  formatQuantumContext,
+  detectUserIntent,
+} from './quantumExpertEngine';
+
+export interface AITutorChatResult {
+  content: string;
+  codeSnippet?: string;
+  intent: AIUserIntent;
+  requiredQubits?: number;
+  gates?: string[];
+  structuredData?: StructuredCircuitData;
+}
 
 export class GeminiService {
   private static apiKey: string = '';
@@ -17,9 +30,13 @@ export class GeminiService {
   }
 
   /**
-   * Prompts the AI Quantum Tutor with structured, context-aware workbench data.
+   * Prompts the AI Quantum Tutor with structured, context-aware workbench data and distinct request intent.
    */
-  static async chat(userPrompt: string, context: AIContext, history: AIMessage[] = []): Promise<string> {
+  static async chat(
+    userPrompt: string,
+    context: AIContext,
+    history: AIMessage[] = []
+  ): Promise<AITutorChatResult> {
     const formattedCtx = formatQuantumContext(context);
     const enrichedContext: AIContext = {
       ...context,
@@ -27,7 +44,8 @@ export class GeminiService {
       gateDetails: formattedCtx.gateDetails,
     };
 
-    logger.info('AITutor', `AI Tutor received prompt: "${userPrompt.slice(0, 60)}..."`);
+    const intent = detectUserIntent(userPrompt);
+    logger.info('AITutor', `AI Tutor received prompt: "${userPrompt.slice(0, 60)}" [Intent: ${intent}]`);
 
     // 1. Primary: Server-side Gemini API Proxy
     try {
@@ -46,19 +64,54 @@ export class GeminiService {
       if (response.ok) {
         const data = await response.json();
         if (data && data.success && data.reply && typeof data.reply === 'string') {
-          logger.success('AITutor', `AI Tutor successfully generated response for: "${userPrompt.slice(0, 40)}"`);
-          return data.reply;
+          logger.success(
+            'AITutor',
+            `AI Tutor successfully generated response for: "${userPrompt.slice(0, 40)}"`
+          );
+
+          const codeMatch = data.reply.match(/```python([\s\S]*?)```/);
+          const extractedCode = data.qiskitCode || (codeMatch ? codeMatch[1].trim() : undefined);
+
+          return {
+            content: data.reply,
+            codeSnippet: extractedCode,
+            intent: data.intent || intent,
+            requiredQubits: data.requiredQubits,
+            gates: data.gates,
+            structuredData: data.structuredData || {
+              intent: data.intent || intent,
+              request: userPrompt,
+              explanation: data.reply,
+              qiskitCode: extractedCode,
+              requiredQubits: data.requiredQubits,
+              gates: data.gates,
+            },
+          };
         }
       } else {
-        logger.warning('AITutor', `Server AI endpoint returned HTTP ${response.status}, falling back to quantum reasoning engine.`);
+        logger.warning(
+          'AITutor',
+          `Server AI endpoint returned HTTP ${response.status}, falling back to quantum reasoning engine.`
+        );
       }
     } catch (fetchErr: any) {
-      logger.warning('AITutor', `Direct server AI fetch failed: ${fetchErr?.message || fetchErr}. Using quantum reasoning fallback.`);
+      logger.warning(
+        'AITutor',
+        `Direct server AI fetch failed: ${fetchErr?.message || fetchErr}. Using quantum reasoning fallback.`
+      );
     }
 
     // 2. High-fidelity Built-In Quantum Expert Engine
-    const fallbackReply = synthesizeQuantumExpertResponse(userPrompt, enrichedContext);
+    const fallbackRes = synthesizeQuantumExpertResponse(userPrompt, enrichedContext);
     logger.info('AITutor', 'Served response via built-in quantum reasoning engine.');
-    return fallbackReply;
+
+    return {
+      content: fallbackRes.reply,
+      codeSnippet: fallbackRes.qiskitCode,
+      intent: fallbackRes.intent,
+      requiredQubits: fallbackRes.requiredQubits,
+      gates: fallbackRes.gates,
+      structuredData: fallbackRes.structuredData,
+    };
   }
 }

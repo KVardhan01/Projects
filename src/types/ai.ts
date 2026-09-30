@@ -1,11 +1,31 @@
 import { CircuitModel, SimulationResult } from './quantum';
 
+export type AIUserIntent =
+  | 'generate_circuit'
+  | 'modify_circuit'
+  | 'debug_circuit'
+  | 'explain_circuit'
+  | 'analyze_simulation'
+  | 'concept_question';
+
+export interface StructuredCircuitData {
+  intent: AIUserIntent;
+  request?: string;
+  explanation?: string;
+  qiskitCode?: string;
+  requiredQubits?: number;
+  gates?: string[];
+  canModifyCurrentCircuit?: boolean;
+}
+
 export interface AIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
   codeSnippet?: string;
+  intent?: AIUserIntent;
+  structuredData?: StructuredCircuitData;
   suggestedAction?: {
     type: 'apply_circuit' | 'load_lesson' | 'try_exercise';
     payload: any;

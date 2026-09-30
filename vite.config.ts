@@ -8,6 +8,8 @@ import { GoogleGenAI } from '@google/genai';
 import {
   formatQuantumContext,
   synthesizeQuantumExpertResponse,
+  detectUserIntent,
+  extractQiskitCodeDetails,
 } from './src/services/ai/quantumExpertEngine';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -220,6 +222,9 @@ function qubifyGeminiPlugin() {
       return res.end(JSON.stringify({ success: false, error: 'Method Not Allowed' }));
     }
 
+    let userPrompt = '';
+    let context: any = {};
+
     try {
       const bodyText = await new Promise<string>((resolve, reject) => {
         let data = '';
@@ -231,8 +236,8 @@ function qubifyGeminiPlugin() {
       });
 
       const payload = JSON.parse(bodyText || '{}');
-      const userPrompt = payload.prompt || '';
-      const context = payload.context || {};
+      userPrompt = payload.prompt || '';
+      context = payload.context || {};
       const history = payload.history || [];
 
       if (!userPrompt || typeof userPrompt !== 'string') {
@@ -240,7 +245,8 @@ function qubifyGeminiPlugin() {
         return res.end(JSON.stringify({ success: false, error: 'Missing prompt in request' }));
       }
 
-      appendLog('INFO', 'AITutor', `Received question: "${userPrompt.slice(0, 80)}"`);
+      const intent = detectUserIntent(userPrompt);
+      appendLog('INFO', 'AITutor', `Received question: "${userPrompt.slice(0, 80)}" | Intent: ${intent}`);
 
       // Format workbench quantum context
       const formatted = formatQuantumContext(context);
@@ -249,48 +255,62 @@ function qubifyGeminiPlugin() {
 You are an expert quantum physicist and quantum computing software engineer.
 Your persona is encouraging, precise, mathematically grounded yet intuitive.
 
-CRITICAL QUANTUM CODE DIRECTIVE:
-1. All executable quantum circuits MUST BE PYTHON + QISKIT ONLY.
-2. NEVER generate TypeScript, JavaScript, JSX, or other languages as circuit code.
-3. Always format quantum circuits using standard Python Qiskit markdown code blocks:
+CRITICAL ARCHITECTURE DIRECTIVE:
+1. The USER REQUEST is your PRIMARY TASK.
+2. The CURRENT WORKBENCH STATE provided below represents only the current editor state for your reference. Do NOT blindly describe or explain the current workbench circuit unless the user explicitly asks for an explanation of their current circuit!
+3. All user-facing executable quantum circuits MUST BE PYTHON + QISKIT ONLY.
+4. Always format quantum circuits using standard Python Qiskit markdown code blocks:
 \`\`\`python
 from qiskit import QuantumCircuit
 
 qc = QuantumCircuit(...)
 ...
 \`\`\`
-4. Qubify automatically generates an "Apply to Visual Circuit" button for every \`\`\`python ... \`\`\` code block. When the user asks to:
-   - "apply GHZ States in circuit" or "build a GHZ state"
-   - "apply Bell state" or "entangle qubits"
-   - "create superposition"
-   - "fix my code" or "repair circuit"
-   - "add gates" or "change the circuit"
-   YOU MUST provide the complete, runnable Python/Qiskit code block so the student can immediately click "Apply to Visual Circuit" to update their canvas!
+Write circuit code directly as top-level sequential statements without wrapping in Python functions or classes, so Qubify's parser can apply it directly to the visual canvas.
 
-CURRENT WORKBENCH CONTEXT:
-1. Current number of qubits: ${formatted.numQubits}
-2. Current number of classical bits: ${formatted.numClassicalBits}
-3. Current circuit gates (${formatted.gateCount} total):
+DETECTED REQUEST INTENT: "${intent}"
+
+${
+  intent === 'generate_circuit'
+    ? `The user is requesting the CREATION/GENERATION of a quantum state or circuit: "${userPrompt}".
+You MUST fulfill this request by providing:
+1. What the requested quantum state/circuit is.
+2. The required number of qubits.
+3. The gates required.
+4. The complete, runnable Python/Qiskit code in a standard \`\`\`python ... \`\`\` code block.
+5. A concise explanation of why those gates create the requested state.
+6. A comparison with the current circuit: explicitly state whether the current circuit can/needs to be modified or replaced to produce it.
+Do NOT claim that the circuit was changed unless the application actually changes the circuit.`
+    : intent === 'explain_circuit'
+    ? `The user wants you to explain their CURRENT circuit. Walk through their active gates and explain their physical function.`
+    : intent === 'analyze_simulation'
+    ? `The user is asking about their simulation results or measurement probabilities. Analyze the active circuit and probabilities.`
+    : intent === 'debug_circuit'
+    ? `The user is reporting an error or asking to debug their circuit. Diagnose the issue and provide the corrected code in a \`\`\`python ... \`\`\` code block.`
+    : intent === 'modify_circuit'
+    ? `The user wants to modify their existing circuit. Explain the change and provide the updated complete Qiskit code in a \`\`\`python ... \`\`\` code block.`
+    : `Answer the conceptual quantum question with physical intuition and mathematical grounding.`
+}
+
+CURRENT WORKBENCH STATE (For reference only - do NOT confuse with user request):
+- Current Circuit Register: ${formatted.numQubits} qubit(s), ${formatted.numClassicalBits} classical bit(s)
+- Current Gates (${formatted.gateCount} total):
 ${formatted.gateDetails}
-4. Current Python / Qiskit Code:
+- Current Qiskit Code:
 \`\`\`python
 ${formatted.activeCode}
 \`\`\`
-5. Current Simulation Results:
-   - Probabilities: ${formatted.probabilitiesStr}
-   - Measurement Counts: ${formatted.measurementCountsStr}
-6. Active Simulation / Validation Errors: ${formatted.simulationError}
-7. Lesson / Exercise Goal: ${formatted.exerciseGoal}
-8. Student Level: ${formatted.studentLevel}
-
-GUIDELINES FOR YOUR RESPONSE:
-1. Context Awareness: Explicitly inspect and address the student's active circuit above.
-2. Physics Intuition: Explain the physical state, Dirac ket notation (e.g. |GHZ⟩ = (|000⟩ + |111⟩)/√2), and gate mechanics.
-3. Standard Qiskit: Use standard methods (qc.h, qc.x, qc.y, qc.z, qc.s, qc.t, qc.cx, qc.swap, qc.measure, qc.measure_all).
+- Current Simulation:
+  * Probabilities: ${formatted.probabilitiesStr}
+  * Measurements: ${formatted.measurementCountsStr}
+- Simulation / Validation Errors: ${formatted.simulationError}
+- Lesson / Exercise Goal: ${formatted.exerciseGoal}
+- Student Level: ${formatted.studentLevel}
 `;
 
       const apiKey = process.env.GEMINI_API_KEY || '';
       let replyText = '';
+      let usedModel = '';
 
       if (apiKey && apiKey.trim().length > 5) {
         const ai = new GoogleGenAI({
@@ -321,7 +341,11 @@ GUIDELINES FOR YOUR RESPONSE:
             }
             contents.push({
               role: 'user',
-              parts: [{ text: userPrompt }],
+              parts: [
+                {
+                  text: `USER REQUEST:\n"${userPrompt}"\n\nINTENT: ${intent}\n\nPlease fulfill this user request following the guidelines.`,
+                },
+              ],
             });
 
             const genResponse = await ai.models.generateContent({
@@ -334,6 +358,7 @@ GUIDELINES FOR YOUR RESPONSE:
 
             if (genResponse && genResponse.text) {
               replyText = genResponse.text;
+              usedModel = modelName;
               appendLog('SUCCESS', 'AITutor', `Generated response using model ${modelName} for "${userPrompt.slice(0, 40)}"`);
               break;
             }
@@ -343,27 +368,76 @@ GUIDELINES FOR YOUR RESPONSE:
         }
       }
 
+      let qiskitCode: string | undefined;
+      let requiredQubits: number | undefined;
+      let gates: string[] | undefined;
+
       if (!replyText) {
         // Use quantum expert synthesis engine
-        replyText = synthesizeQuantumExpertResponse(userPrompt, context);
+        const expertRes = synthesizeQuantumExpertResponse(userPrompt, context);
+        replyText = expertRes.reply;
+        qiskitCode = expertRes.qiskitCode;
+        requiredQubits = expertRes.requiredQubits;
+        gates = expertRes.gates;
         appendLog('INFO', 'AITutor', `Served response via quantum reasoning engine for "${userPrompt.slice(0, 40)}"`);
+      } else {
+        const codeMatch = replyText.match(/```python([\s\S]*?)```/);
+        if (codeMatch) {
+          qiskitCode = codeMatch[1].trim();
+          const details = extractQiskitCodeDetails(qiskitCode);
+          requiredQubits = details.requiredQubits;
+          gates = details.gates;
+        }
       }
+
+      const structuredData: any = {
+        intent,
+        request: userPrompt,
+        explanation: replyText,
+        qiskitCode,
+        requiredQubits,
+        gates,
+        canModifyCurrentCircuit: intent === 'generate_circuit' || intent === 'modify_circuit',
+      };
 
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin': '*',
       });
-      res.end(JSON.stringify({ success: true, reply: replyText }));
+      res.end(
+        JSON.stringify({
+          success: true,
+          intent,
+          request: userPrompt,
+          reply: replyText,
+          explanation: replyText,
+          qiskitCode,
+          requiredQubits,
+          gates,
+          structuredData,
+        })
+      );
     } catch (err: any) {
       console.error('[AITutor] Error processing AI chat request:', err);
-      // Fallback
       try {
-        const fallback = synthesizeQuantumExpertResponse(req.url, {});
+        const expertFallback = synthesizeQuantumExpertResponse(userPrompt || req.url, context || {});
         res.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8',
           'Access-Control-Allow-Origin': '*',
         });
-        res.end(JSON.stringify({ success: true, reply: fallback }));
+        res.end(
+          JSON.stringify({
+            success: true,
+            intent: expertFallback.intent,
+            request: userPrompt,
+            reply: expertFallback.reply,
+            explanation: expertFallback.reply,
+            qiskitCode: expertFallback.qiskitCode,
+            requiredQubits: expertFallback.requiredQubits,
+            gates: expertFallback.gates,
+            structuredData: expertFallback.structuredData,
+          })
+        );
       } catch {
         res.writeHead(500, {
           'Content-Type': 'application/json; charset=utf-8',

@@ -1,4 +1,4 @@
-import { AIContext } from '../../types/ai';
+import { AIContext, AIUserIntent, StructuredCircuitData } from '../../types/ai';
 
 export interface FormattedQuantumContext {
   numQubits: number;
@@ -11,6 +11,191 @@ export interface FormattedQuantumContext {
   simulationError: string;
   exerciseGoal: string;
   studentLevel: string;
+}
+
+export interface QuantumExpertResult {
+  reply: string;
+  intent: AIUserIntent;
+  request: string;
+  qiskitCode?: string;
+  requiredQubits?: number;
+  gates?: string[];
+  canModifyCurrentCircuit?: boolean;
+  structuredData?: StructuredCircuitData;
+}
+
+/**
+ * Robust semantic intent detection distinguishing between:
+ * 1. generate_circuit: requests to create, make, build, synthesize, or prepare a quantum state/circuit
+ * 2. modify_circuit: requests to add, remove, or change gates in the current circuit
+ * 3. debug_circuit: requests to fix errors, broken code, or repair circuits
+ * 4. explain_circuit: requests to explain, walk through, or describe the current circuit
+ * 5. analyze_simulation: questions about measurement probabilities, outcomes, or sampling
+ * 6. concept_question: questions about physics concepts, gates, or notation
+ */
+export function detectUserIntent(prompt: string): AIUserIntent {
+  const p = prompt.toLowerCase().trim();
+
+  // 1. Debugging requests
+  if (
+    p.includes('fix') ||
+    p.includes('debug') ||
+    p.includes('broken') ||
+    p.includes('syntax error') ||
+    p.includes('repair circuit') ||
+    p.includes('repair code') ||
+    p.includes('why is my code failing') ||
+    p.includes('unsupported operation') ||
+    p.includes('fix my code') ||
+    p.includes('fix my circuit')
+  ) {
+    return 'debug_circuit';
+  }
+
+  // 2. Simulation / outcome analysis requests
+  if (
+    p.includes('why am i getting') ||
+    p.includes('why did my circuit produce') ||
+    p.includes('why is probability') ||
+    p.includes('why 50/50') ||
+    p.includes('explain the result') ||
+    p.includes('explain the probabilities') ||
+    p.includes('why are outcomes') ||
+    p.includes('why did this happen')
+  ) {
+    return 'analyze_simulation';
+  }
+
+  // 3. Explanation of current circuit
+  if (
+    p.includes('explain this circuit') ||
+    p.includes('explain my current circuit') ||
+    p.includes('explain my circuit') ||
+    p.includes('explain the circuit') ||
+    p.includes('walk me through this circuit') ||
+    p.includes('what is this circuit doing') ||
+    p.includes('what does this circuit do') ||
+    p.includes('overview of this circuit')
+  ) {
+    return 'explain_circuit';
+  }
+
+  // 4. Circuit modification requests (modifying the existing circuit)
+  if (
+    p.startsWith('add ') ||
+    p.startsWith('remove ') ||
+    p.startsWith('change ') ||
+    p.startsWith('replace ') ||
+    p.includes('insert gate') ||
+    p.includes('add a gate') ||
+    p.includes('change this gate') ||
+    p.includes('swap qubit')
+  ) {
+    return 'modify_circuit';
+  }
+
+  // 5. Circuit-generation requests (user wants a state, circuit, or algorithm constructed)
+  const creationVerbs = [
+    'create',
+    'make',
+    'build',
+    'generate',
+    'construct',
+    'implement',
+    'apply',
+    'synthesize',
+    'prepare',
+    'design',
+    'code',
+    'show me how to make',
+    'show me how to build',
+    'give me a circuit',
+    'give me the circuit',
+  ];
+
+  const quantumTargets = [
+    'werner',
+    'bell',
+    'ghz',
+    'greenberger',
+    'w state',
+    'superposition',
+    'teleport',
+    'teleportation',
+    'grover',
+    'deutsch',
+    'deutsch-jozsa',
+    'qft',
+    'fourier',
+    'swap',
+    'singlet',
+    'triplet',
+    'phase kickback',
+    'cat state',
+    'cluster state',
+    'circuit for',
+    'state in circuit',
+    'states in circuit',
+    'state',
+  ];
+
+  const hasCreationVerb = creationVerbs.some((v) => p.includes(v));
+  const hasQuantumTarget = quantumTargets.some((t) => p.includes(t));
+
+  const isQuestionAboutHowItWorks =
+    p.startsWith('how does') ||
+    p.startsWith('what is') ||
+    p.startsWith('what are') ||
+    p.startsWith('why is') ||
+    p.startsWith('can you explain what');
+
+  if (hasCreationVerb && hasQuantumTarget && !isQuestionAboutHowItWorks) {
+    return 'generate_circuit';
+  }
+
+  // Direct short targets like "Werner state", "GHZ state", "Bell state" when entered directly
+  if (
+    (p.includes('werner') || p.includes('bell') || p.includes('ghz') || p.includes('teleport')) &&
+    !isQuestionAboutHowItWorks &&
+    !p.includes('explain')
+  ) {
+    return 'generate_circuit';
+  }
+
+  return 'concept_question';
+}
+
+/**
+ * Extracts Qiskit circuit metadata from a Python code string:
+ * - Number of qubits
+ * - List of gate operations
+ */
+export function extractQiskitCodeDetails(code: string): {
+  requiredQubits: number;
+  gates: string[];
+} {
+  let requiredQubits = 2;
+  const qcMatch = code.match(/QuantumCircuit\((\d+)/);
+  if (qcMatch) {
+    requiredQubits = parseInt(qcMatch[1], 10);
+  }
+
+  const gatesSet = new Set<string>();
+  const gateMatches = code.matchAll(/qc\.([a-zA-Z_]\w*)\s*\(/g);
+  for (const match of gateMatches) {
+    const methodName = match[1].toLowerCase();
+    if (['h', 'x', 'y', 'z', 's', 't', 'cx', 'cnot', 'swap', 'measure', 'measure_all'].includes(methodName)) {
+      if (methodName === 'cnot') gatesSet.add('CX');
+      else if (methodName === 'measure_all') gatesSet.add('M');
+      else if (methodName === 'measure') gatesSet.add('M');
+      else gatesSet.add(methodName.toUpperCase());
+    }
+  }
+
+  return {
+    requiredQubits,
+    gates: Array.from(gatesSet),
+  };
 }
 
 /**
@@ -28,7 +213,7 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
   const numQubits = circuit?.numQubits || 2;
   const operations = circuit?.operations || [];
 
-  // 2. Count classical bits from measurement operations or explicit context
+  // Count classical bits from measurement operations or explicit context
   const measurementOps = operations.filter((op) => op.gate === 'M');
   let numClassicalBits =
     context.numClassicalBits !== undefined
@@ -45,7 +230,7 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
     }
   }
 
-  // 3-7. Gate list with Type, Targets, Controls, Parameters, Moment
+  // Gate list with Type, Targets, Controls, Parameters, Moment
   let gateDetails = 'None (empty circuit with all qubits in |0> ground state)';
   if (operations.length > 0) {
     gateDetails = operations
@@ -97,128 +282,287 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
 /**
  * Intelligent Quantum Expert reasoning engine for circuit creation, manipulation, and analysis.
  */
-export function synthesizeQuantumExpertResponse(userPrompt: string, context: AIContext): string {
+export function synthesizeQuantumExpertResponse(
+  userPrompt: string,
+  context: AIContext
+): QuantumExpertResult {
   const p = userPrompt.toLowerCase().trim();
+  const intent = detectUserIntent(userPrompt);
   const ctx = formatQuantumContext(context);
   const ops = context.circuit?.operations || [];
-  const numQubits = ctx.numQubits;
+  const currentQubits = ctx.numQubits;
 
-  // 1. GHZ State Request: e.g. "apply GHZ States in circuit", "create GHZ state", "make a GHZ circuit"
-  if (p.includes('ghz') || p.includes('greenberger')) {
-    const targetQubits = Math.max(3, numQubits);
-    return `### Greenberger–Horne–Zeilinger (GHZ) State
+  // =========================================================================
+  // 1. CIRCUIT GENERATION REQUESTS
+  // =========================================================================
 
-A **GHZ State** is a maximally entangled quantum state involving three or more qubits. For a 3-qubit system, the canonical state is defined as:
-$$|\\text{GHZ}\\rangle = \\frac{|000\\rangle + |111\\rangle}{\\sqrt{2}}$$
+  // 1A. Werner State Generation (e.g. "create Werner States", "make Werner state")
+  if (p.includes('werner')) {
+    const qiskitCode = `from qiskit import QuantumCircuit
 
-#### Physical Intuition:
-Unlike product states or pairwise Bell states, a GHZ state exhibits **genuine tripartite entanglement**: measuring any single qubit immediately collapses all other entangled qubits into the identical computational basis outcome ($|0\\rangle$ or $|1\\rangle$).
+# 2-qubit Werner State base circuit (Bell Singlet state |Ψ-⟩)
+# In Qubify, configure the depolarizing noise setting (1-p) to adjust the Werner mixing ratio p.
+qc = QuantumCircuit(2)
 
-#### Construction Steps:
-1. **Hadamard Gate on $q_0$**: Places qubit 0 into equal superposition:
-   $$H|0\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}}$$
-2. **CNOT from $q_0$ to $q_1$**: Entangles qubit 1 with qubit 0, creating a Bell state:
-   $$\\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$$
-3. **CNOT from $q_1$ to $q_2$** (or $q_0$ to $q_2$): Chains the entanglement to qubit 2:
-   $$\\frac{|000\\rangle + |111\\rangle}{\\sqrt{2}}$$
+# Step 1: Prepare |11> computational basis
+qc.x(0)
+qc.x(1)
 
-Here is the complete Python / Qiskit code to apply this GHZ state:
+# Step 2: Create equal superposition on q0
+qc.h(0)
+
+# Step 3: Entangle q1 with q0 using CNOT
+qc.cx(0, 1)
+
+# Step 4: Apply Pauli-Z to create the singlet relative phase: (|01> - |10>)/√2
+qc.z(0)`;
+
+    const reply = `### Werner State Construction
+
+#### 1. What is a Werner State?
+In quantum information theory, a **Werner State** $\\rho_W$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell singlet state $|\\Psi^-\\rangle$ and the maximally mixed white-noise state $\\frac{I_4}{4}$:
+$$\\rho_W(p) = p |\\Psi^-\\rangle\\langle\\Psi^-| + \\frac{1-p}{4} I_4, \\quad p \\in [0, 1]$$
+- When $p = 1$: The state is the pure Bell singlet state $|\\Psi^-\\rangle = \\frac{|01\\rangle - |10\\rangle}{\\sqrt{2}}$.
+- When $p > \\frac{1}{3}$: The state is entangled and violates the Peres-Horodecki separability criterion.
+- When $p \\le \\frac{1}{3}$: The state is separable.
+
+#### 2. Required Number of Qubits
+**2 Qubits** (represented as $q_0$ and $q_1$).
+
+#### 3. Required Gates
+- **X Gates**: Applied to $q_0$ and $q_1$ to initialize the state to $|11\\rangle$.
+- **H Gate**: Applied to $q_0$ to create superposition.
+- **CX (CNOT) Gate**: With control $q_0$ and target $q_1$ to establish entanglement.
+- **Z Gate**: Applied to $q_0$ to flip the relative phase, isolating the anti-symmetric singlet $|\\Psi^-\\rangle$.
+
+#### 4. Complete Qiskit Python Code
 \`\`\`python
-from qiskit import QuantumCircuit
+${qiskitCode}
+\`\`\`
 
-# 3-qubit GHZ state circuit
+#### 5. Why These Gates Create the State
+1. Starting from the default ground state $|00\\rangle$, the Pauli-X gates on both wires prepare $|11\\rangle$.
+2. The Hadamard gate on $q_0$ puts the control wire into superposition: $\\frac{|01\\rangle - |11\\rangle}{\\sqrt{2}}$.
+3. The CNOT gate flips target $q_1$ whenever $q_0$ is 1, creating the entangled state $\\frac{|01\\rangle - |10\\rangle}{\\sqrt{2}} = |\\Psi^-\\rangle$.
+4. In Qubify, you can adjust the platform's **Depolarizing Noise** slider in the simulation settings to simulate the $(1 - p)$ white noise mixing parameter!
+
+#### 6. Can the Current Circuit Be Modified?
+**Yes.** Your current editor currently contains **${currentQubits} qubit(s)** and **${ops.length} gate(s)**${
+      ops.length > 0 ? ` (${ops.map((o) => o.gate).join(', ')})` : ''
+    }. To produce the Werner state:
+- Set the circuit register width to 2 qubits.
+- Replace any existing gate operations with the 2-qubit singlet sequence above (\`qc.x(0)\`, \`qc.x(1)\`, \`qc.h(0)\`, \`qc.cx(0, 1)\`, \`qc.z(0)\`).
+
+Click **"Apply to Visual Circuit"** below to load this circuit directly onto your visual canvas!`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 2,
+      gates: ['X', 'H', 'CX', 'Z'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        requiredQubits: 2,
+        gates: ['X', 'H', 'CX', 'Z'],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // 1B. GHZ State Generation (e.g. "create GHZ state", "make GHZ", "apply GHZ States in circuit")
+  if (p.includes('ghz') || p.includes('greenberger')) {
+    const targetQubits = Math.max(3, currentQubits);
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# 3-qubit Greenberger-Horne-Zeilinger (GHZ) state circuit
 qc = QuantumCircuit(${targetQubits})
 
-# Step 1: Create superposition on q0
+# Step 1: Create equal superposition on q0
 qc.h(0)
 
 # Step 2: Entangle q1 with q0
 qc.cx(0, 1)
 
-# Step 3: Entangle q2 with q1 to form the tripartite GHZ state
-qc.cx(1, 2)
+# Step 3: Chain entanglement to q2
+qc.cx(1, 2)`;
+
+    const reply = `### Greenberger–Horne–Zeilinger (GHZ) State Construction
+
+#### 1. What is a GHZ State?
+A **GHZ State** is a maximally entangled quantum state involving three or more qubits. For 3 qubits, the canonical state is defined as:
+$$|\\text{GHZ}\\rangle = \\frac{|000\\rangle + |111\\rangle}{\\sqrt{2}}$$
+It exhibits **genuine tripartite entanglement**: measuring any single qubit immediately collapses all three qubits to either $|000\\rangle$ or $|111\\rangle$ with equal $50\\%$ probability.
+
+#### 2. Required Number of Qubits
+**3 Qubits** (or more for generalized $N$-qubit GHZ states).
+
+#### 3. Required Gates
+- **H Gate**: On qubit $q_0$.
+- **CX (CNOT) Gates**: From $q_0 \\to q_1$, and from $q_1 \\to q_2$.
+
+#### 4. Complete Qiskit Python Code
+\`\`\`python
+${qiskitCode}
 \`\`\`
 
-Click **"Apply to Visual Circuit"** below to load this GHZ state onto your visual canvas and run the quantum simulator!`;
-  }
+#### 5. Why These Gates Create the State
+1. $H(q_0)$ transforms $|000\\rangle$ into $\\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}} \\otimes |00\\rangle = \\frac{|000\\rangle + |100\\rangle}{\\sqrt{2}}$.
+2. $CX(q_0, q_1)$ flips $q_1$ when $q_0$ is 1: $\\frac{|000\\rangle + |110\\rangle}{\\sqrt{2}}$.
+3. $CX(q_1, q_2)$ flips $q_2$ when $q_1$ is 1: $\\frac{|000\\rangle + |111\\rangle}{\\sqrt{2}}$.
 
-  // 2. Bell State Request: e.g. "apply Bell state", "create Bell state", "entangle two qubits"
-  if (p.includes('bell state') || p.includes('bell pair') || p.includes('epr') || (p.includes('entangle') && !p.includes('ghz'))) {
-    return `### Entangled Bell State ($|\\Phi^+\\rangle$)
-
-The Bell state $|\\Phi^+\\rangle$ is the foundational 2-qubit maximally entangled state:
-$$|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$$
-
-#### Current Circuit Assessment:
-- Current qubits: **${numQubits}**
-- Existing gates: **${ops.length}**
-- Status: ${
-      ops.some((o) => o.gate === 'H' && o.targets.includes(0)) &&
-      ops.some((o) => o.gate === 'CX' && o.controls.includes(0) && o.targets.includes(1))
-        ? '✅ Your active circuit already contains the core Bell state structure (H on q0 and CX(0,1))!'
-        : 'To construct the Bell state, apply a Hadamard gate to qubit 0, followed by a CNOT gate with control 0 and target 1.'
+#### 6. Can the Current Circuit Be Modified?
+**Yes.** Your active circuit currently has **${currentQubits} qubits** and **${ops.length} gates**.${
+      currentQubits < 3
+        ? ' The circuit will be expanded from ' + currentQubits + ' to 3 qubits to accommodate tripartite entanglement.'
+        : ' The existing gates will be configured to match the H + CNOT + CNOT sequence.'
     }
 
-Here is the standard Python / Qiskit code:
-\`\`\`python
-from qiskit import QuantumCircuit
+Click **"Apply to Visual Circuit"** below to load this circuit onto your visual canvas!`;
 
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: targetQubits,
+      gates: ['H', 'CX'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        requiredQubits: targetQubits,
+        gates: ['H', 'CX'],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // 1C. Bell State Generation (e.g. "create a Bell state", "make Bell state", "build a Bell circuit")
+  if (p.includes('bell') || (p.includes('entangle') && !p.includes('werner') && !p.includes('ghz'))) {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# 2-qubit Bell State (|Φ+⟩)
 qc = QuantumCircuit(2)
 
-# Create equal superposition on q0
+# Step 1: Create equal superposition on q0
 qc.h(0)
 
-# Apply CNOT to entangle q1 with q0
-qc.cx(0, 1)
+# Step 2: Entangle q1 with q0
+qc.cx(0, 1)`;
+
+    const reply = `### Bell State ($|\\Phi^+\\rangle$) Construction
+
+#### 1. What is a Bell State?
+A **Bell State** is one of the four maximally entangled two-qubit quantum states. The standard Bell state $|\\Phi^+\\rangle$ is:
+$$|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$$
+Measuring one qubit instantaneously determines the state of the other, regardless of spatial separation.
+
+#### 2. Required Number of Qubits
+**2 Qubits** ($q_0$ and $q_1$).
+
+#### 3. Required Gates
+- **H Gate**: On control qubit $q_0$.
+- **CX (CNOT) Gate**: Control $q_0$, target $q_1$.
+
+#### 4. Complete Qiskit Python Code
+\`\`\`python
+${qiskitCode}
 \`\`\`
 
-Click **"Apply to Visual Circuit"** to immediately update your workbench and observe the 50/50 probability distribution between $|00\\rangle$ and $|11\\rangle$.`;
+#### 5. Why These Gates Create the State
+1. $H(q_0)$ creates an equal superposition: $\\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}} \\otimes |0\\rangle = \\frac{|00\\rangle + |10\\rangle}{\\sqrt{2}}$.
+2. $CX(0, 1)$ flips $q_1$ when $q_0 = 1$, yielding $\\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$.
+
+#### 6. Can the Current Circuit Be Modified?
+**Yes.** Your active circuit currently contains **${currentQubits} qubit(s)** and **${ops.length} gate(s)**. Applying the code below configures a 2-qubit Bell state register.
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your visual canvas!`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 2,
+      gates: ['H', 'CX'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        requiredQubits: 2,
+        gates: ['H', 'CX'],
+        canModifyCurrentCircuit: true,
+      },
+    };
   }
 
-  // 3. Superposition Request: e.g. "what is superposition", "create superposition", "hadamard", "h gate"
-  if (p.includes('superposition') || p.includes('hadamard') || p.includes('h gate')) {
-    const hasH = ops.some((o) => o.gate === 'H');
-    return `### Quantum Superposition & The Hadamard (H) Gate
+  // 1D. Superposition Circuit
+  if (p.includes('superposition') && intent === 'generate_circuit') {
+    const qiskitCode = `from qiskit import QuantumCircuit
 
-In quantum mechanics, **superposition** allows a qubit to exist in a linear combination of the computational basis states $|0\\rangle$ and $|1\\rangle$:
-$$|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle, \\quad |\\alpha|^2 + |\\beta|^2 = 1$$
+qc = QuantumCircuit(${currentQubits})
 
-#### The Hadamard Transformation:
-Applying an **H gate** to $|0\\rangle$ maps it to the $|+\\rangle$ state on the equator of the Bloch sphere:
-$$H|0\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}} = |+\\rangle$$
-This produces equal $50\\%$ measurement probabilities for both outcomes.
+# Apply Hadamard gate across all qubits to create full equal superposition
+${Array.from({ length: currentQubits }, (_, i) => `qc.h(${i})`).join('\n')}`;
 
-#### Current Circuit Status:
-- Qubits: **${numQubits}**
-- Hadamard Gate Present: ${hasH ? '✅ Yes, you currently have H gate(s) placed!' : '❌ Not placed yet.'}
+    const reply = `### Equal Superposition Circuit
 
-Here is the Qiskit code to apply equal superposition across all qubits:
+#### 1. What is Equal Superposition?
+Applying Hadamard gates to all $n$ qubits creates a state with equal probability amplitudes across all $2^n$ basis states:
+$$|\\psi\\rangle = H^{\\otimes n} |0\\rangle^{\\otimes n} = \\frac{1}{\\sqrt{2^n}} \\sum_{x=0}^{2^n-1} |x\\rangle$$
+
+#### 2. Required Number of Qubits
+**${currentQubits} Qubits** (matches your active workbench width).
+
+#### 3. Required Gates
+- **H Gate**: Placed on each qubit wire.
+
+#### 4. Complete Qiskit Python Code
 \`\`\`python
-from qiskit import QuantumCircuit
-
-qc = QuantumCircuit(${numQubits})
-
-# Apply Hadamard to each qubit wire
-${Array.from({ length: numQubits }, (_, i) => `qc.h(${i})`).join('\n')}
+${qiskitCode}
 \`\`\`
 
-Click **"Apply to Visual Circuit"** to synchronize and simulate.`;
+#### 5. Why These Gates Create the State
+Each Hadamard gate rotates a qubit from the computational basis state $|0\\rangle$ to the equatorial state $|+\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}}$. The tensor product of $n$ such states yields a uniform distribution with $1/2^n$ probability per basis outcome.
+
+#### 6. Can the Current Circuit Be Modified?
+**Yes.** Applying this circuit updates your active ${currentQubits}-qubit register with parallel Hadamard gates.
+
+Click **"Apply to Visual Circuit"** to synchronize with your visual canvas!`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: currentQubits,
+      gates: ['H'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        requiredQubits: currentQubits,
+        gates: ['H'],
+        canModifyCurrentCircuit: true,
+      },
+    };
   }
 
-  // 4. Quantum Teleportation
-  if (p.includes('teleport') || p.includes('teleportation')) {
-    return `### Quantum Teleportation Protocol
-
-Quantum Teleportation allows transmitting an unknown quantum state $|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle$ from Alice ($q_0$) to Bob ($q_2$) using a shared entangled Bell pair ($q_1, q_2$) and 2 classical bits of information.
-
-#### Protocol Sequence:
-1. **Prepare Entangled Pair**: Alice ($q_1$) and Bob ($q_2$) share a Bell pair ($H(q_1)$ then $CX(q_1, q_2)$).
-2. **Alice's Bell-State Measurement**: Alice interacts her state ($q_0$) with her half of the pair ($q_1$) using $CX(q_0, q_1)$ and $H(q_0)$, then measures both.
-3. **Bob's Reconstruction**: Bob applies conditional Pauli $X$ and $Z$ gates based on Alice's measurement results.
-
-Here is the runnable Qiskit circuit:
-\`\`\`python
-from qiskit import QuantumCircuit
+  // 1E. Quantum Teleportation Circuit
+  if (p.includes('teleport') && intent === 'generate_circuit') {
+    const qiskitCode = `from qiskit import QuantumCircuit
 
 # 3 qubits: q0 (state to teleport), q1 (Alice EPR), q2 (Bob EPR)
 # 2 classical bits for Alice's measurement results
@@ -234,121 +578,110 @@ qc.h(0)
 
 # Step 3: Measurement
 qc.measure(0, 0)
-qc.measure(1, 1)
-\`\`\`
+qc.measure(1, 1)`;
 
-Click **"Apply to Visual Circuit"** to explore the teleportation protocol in the editor.`;
-  }
+    const reply = `### Quantum Teleportation Circuit
 
-  // 5. Grover's Algorithm
-  if (p.includes('grover') || p.includes('amplitude amplification') || p.includes('quantum search')) {
-    return `### Grover's Quantum Search Algorithm
+#### 1. What is Quantum Teleportation?
+Quantum Teleportation transmits an unknown quantum state $|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle$ from Alice ($q_0$) to Bob ($q_2$) using a pre-shared entangled Bell pair ($q_1, q_2$) and 2 classical bits of information.
 
-Grover's algorithm searches an unsorted database of $N = 2^n$ items with a **quadratic speedup**, taking approximately $O(\\sqrt{N})$ queries instead of classical $O(N)$.
+#### 2. Required Number of Qubits
+**3 Qubits** and **2 Classical Bits**.
 
-#### Core Architecture:
-1. **Equal Superposition Initialization**: Apply Hadamard gates $H^{\\otimes n}$ to all register qubits.
-2. **Grover Iterate** (repeated $\\approx \\frac{\\pi}{4}\\sqrt{N}$ times):
-   - **Phase Oracle ($U_f$)**: Flips the phase of the marked target state $|w\\rangle$: $|x\\rangle \\to (-1)^{f(x)}|x\\rangle$.
-   - **Diffuser ($U_s$)**: Reflects amplitudes about the average superposition state: $2|s\\rangle\\langle s| - I$.
+#### 3. Required Gates
+- **H and CX**: To create the shared Bell pair and perform Bell-basis decoding.
+- **M (Measure)**: To measure $q_0$ and $q_1$ into classical registers.
 
-Here is a 2-qubit Grover circuit searching for the marked state $|11\\rangle$:
+#### 4. Complete Qiskit Python Code
 \`\`\`python
-from qiskit import QuantumCircuit
-
-qc = QuantumCircuit(2)
-
-# 1. Initialize equal superposition
-qc.h(0)
-qc.h(1)
-
-# 2. Oracle for target state |11> (Controlled-Z via H-CX-H)
-qc.h(1)
-qc.cx(0, 1)
-qc.h(1)
-
-# 3. Grover Diffuser
-qc.h(0)
-qc.h(1)
-qc.x(0)
-qc.x(1)
-qc.h(1)
-qc.cx(0, 1)
-qc.h(1)
-qc.x(0)
-qc.x(1)
-qc.h(0)
-qc.h(1)
+${qiskitCode}
 \`\`\`
 
-Click **"Apply to Visual Circuit"** to test amplitude amplification.`;
+#### 5. Why These Gates Create the State
+1. $H(q_1)$ and $CX(q_1, q_2)$ establish the quantum channel (Bell pair).
+2. $CX(q_0, q_1)$ and $H(q_0)$ rotate Alice's combined system into the Bell basis.
+3. Measuring Alice's qubits teleports the state to Bob up to known Pauli $X$ and $Z$ corrections.
+
+#### 6. Can the Current Circuit Be Modified?
+**Yes.** The circuit will be configured with 3 qubits and 2 classical measurement wires.
+
+Click **"Apply to Visual Circuit"** to load this circuit into your workbench!`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 3,
+      gates: ['H', 'CX', 'M'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        requiredQubits: 3,
+        gates: ['H', 'CX', 'M'],
+        canModifyCurrentCircuit: true,
+      },
+    };
   }
 
-  // 6. Fix my code / Error Diagnosis
-  if (p.includes('fix') || p.includes('error') || p.includes('broken') || p.includes('debug') || context.simulationError) {
-    if (context.simulationError) {
-      return `### Quantum Diagnostic & Code Resolution
+  // =========================================================================
+  // 2. DEBUGGING / ERROR FIXING REQUESTS
+  // =========================================================================
+  if (intent === 'debug_circuit') {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(${Math.max(2, currentQubits)})
+
+# Applying standardized clean quantum sequence
+qc.h(0)
+${currentQubits > 1 ? 'qc.cx(0, 1)' : 'qc.x(0)'}`;
+
+    const reply = `### Quantum Diagnostic & Code Resolution
 
 **Detected Issue:**
-${context.simulationError}
+${context.simulationError || 'Code/circuit requires syntax stabilization.'}
 
 #### Diagnosis:
-Quantum operations must reference valid qubit indices within the allocated circuit width (**${numQubits} qubit(s)**) and adhere to canonical Qiskit syntax.
+Quantum operations must reference valid qubit indices within the allocated circuit width (**${currentQubits} qubit(s)**) and adhere to canonical Qiskit syntax.
 
 Here is the corrected Python / Qiskit code:
 \`\`\`python
-from qiskit import QuantumCircuit
-
-qc = QuantumCircuit(${Math.max(2, numQubits)})
-
-# Applying foundational clean sequence
-qc.h(0)
-${numQubits > 1 ? 'qc.cx(0, 1)' : 'qc.x(0)'}
+${qiskitCode}
 \`\`\`
 
 Click **"Apply to Visual Circuit"** below to load this fix into your workbench.`;
-    }
 
-    // Generic fix review
-    return `### Circuit Review & Optimization
-
-**Workbench Status:**
-- Register Size: **${numQubits} qubits**
-- Active Gates: **${ops.length} operations**
-- Current Qiskit Code:
-\`\`\`python
-${ctx.activeCode}
-\`\`\`
-
-#### Recommended Normalized Code:
-\`\`\`python
-from qiskit import QuantumCircuit
-
-qc = QuantumCircuit(${numQubits})
-
-${
-  ops.length > 0
-    ? ops
-        .map((o) => {
-          if (o.gate === 'CX' && o.controls?.length > 0) return `qc.cx(${o.controls[0]}, ${o.targets[0]})`;
-          if (o.gate === 'SWAP' && o.targets?.length > 1) return `qc.swap(${o.targets[0]}, ${o.targets[1]})`;
-          if (o.gate === 'M') return `qc.measure(${o.targets[0]}, ${o.targets[0]})`;
-          return `qc.${o.gate.toLowerCase()}(${o.targets[0]})`;
-        })
-        .join('\n')
-    : '# Clean initialized circuit\nqc.h(0)\nqc.cx(0, 1)'
-}
-\`\`\`
-
-Click **"Apply to Visual Circuit"** to synchronize.`;
+    return {
+      reply,
+      intent: 'debug_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: Math.max(2, currentQubits),
+      gates: ['H', 'CX'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'debug_circuit',
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        requiredQubits: Math.max(2, currentQubits),
+        gates: ['H', 'CX'],
+        canModifyCurrentCircuit: true,
+      },
+    };
   }
 
-  // 7. Explain this circuit / Overview
-  if (p.includes('explain') || p.includes('overview') || p.includes('what does this circuit do')) {
-    return `### Active Quantum Circuit Analysis
+  // =========================================================================
+  // 3. EXPLAIN CURRENT CIRCUIT REQUESTS
+  // =========================================================================
+  if (intent === 'explain_circuit') {
+    const reply = `### Active Quantum Circuit Analysis
 
 **Workbench Configuration:**
-- **Qubit Register Width:** ${numQubits} qubit(s)
+- **Qubit Register Width:** ${currentQubits} qubit(s)
 - **Classical Bits:** ${ctx.numClassicalBits}
 - **Total Operations:** ${ops.length} gate(s)
 
@@ -362,13 +695,26 @@ ${ctx.probabilitiesStr}
 ${
   ops.length === 0
     ? 'Your circuit is currently empty. All qubits remain in the computational basis ground state $|00\\dots0\\rangle$. Try adding a Hadamard gate to explore superposition!'
-    : `This circuit performs a sequence of unitary transformations $U_k \\dots U_1 |0\\rangle^{\\otimes ${numQubits}}$. Check the State Vector and Bloch Sphere views in the simulation panel to inspect phase angles and amplitude magnitudes.`
+    : `This circuit performs a sequence of unitary transformations $U_k \\dots U_1 |0\\rangle^{\\otimes ${currentQubits}}$. Check the State Vector and Bloch Sphere views in the simulation panel to inspect phase angles and amplitude magnitudes.`
 }`;
+
+    return {
+      reply,
+      intent: 'explain_circuit',
+      request: userPrompt,
+      structuredData: {
+        intent: 'explain_circuit',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
   }
 
-  // 8. Why am I getting this result?
-  if (p.includes('why') && (p.includes('result') || p.includes('probability') || p.includes('outcome'))) {
-    return `### Simulation Outcome Explanation
+  // =========================================================================
+  // 4. SIMULATION OUTCOME ANALYSIS
+  // =========================================================================
+  if (intent === 'analyze_simulation') {
+    const reply = `### Simulation Outcome Explanation
 
 **Current Basis State Probabilities:**
 ${ctx.probabilitiesStr}
@@ -380,65 +726,69 @@ Your circuit applies ${ops.length} quantum gate(s). Each single-qubit gate acts 
 ${ctx.gateDetails}
 
 To sample measurement statistics, click **Simulate Circuit** in the top workbench toolbar.`;
+
+    return {
+      reply,
+      intent: 'analyze_simulation',
+      request: userPrompt,
+      structuredData: {
+        intent: 'analyze_simulation',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
   }
 
-  // 9. Specific gate questions: Pauli X, Y, Z, S, T, SWAP, CNOT
-  if (p.includes('x gate') || p.includes('not gate')) {
-    return `### Pauli-X Gate (Quantum NOT)
+  // =========================================================================
+  // 5. CONCEPTUAL QUESTIONS / DEFAULT
+  // =========================================================================
+  if (p.includes('h gate') || p.includes('hadamard')) {
+    const reply = `### The Hadamard (H) Gate
 
-The **Pauli-X** gate performs a $\\pi$ (180°) rotation around the X-axis of the Bloch sphere, acting as a bit-flip operator:
-$$X|0\\rangle = |1\\rangle, \\quad X|1\\rangle = |0\\rangle$$
+The **Hadamard** gate is the primary operator for creating quantum superposition:
+$$H|0\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}} = |+\\rangle$$
+$$H|1\\rangle = \\frac{|0\\rangle - |1\\rangle}{\\sqrt{2}} = |-\\rangle$$
 
-In matrix form:
-$$X = \\begin{pmatrix} 0 & 1 \\\\ 1 & 0 \\end{pmatrix}$$
+On the Bloch sphere, it performs a $180^\\circ$ rotation around the diagonal $(X + Z)/\\sqrt{2}$ axis, swapping the computational Z-basis with the equatorial X-basis.`;
 
-In Qiskit: \`qc.x(qubit_index)\``;
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
   }
 
-  if (p.includes('z gate') || p.includes('phase flip')) {
-    return `### Pauli-Z Gate (Phase Flip)
+  const defaultReply = `Hello! I am your **AI Quantum Study Companion**.
 
-The **Pauli-Z** gate performs a $\\pi$ rotation around the Z-axis of the Bloch sphere, flipping the relative phase of the $|1\\rangle$ component without altering measurement probabilities:
-$$Z|0\\rangle = |0\\rangle, \\quad Z|1\\rangle = -|1\\rangle$$
-
-In matrix form:
-$$Z = \\begin{pmatrix} 1 & 0 \\\\ 0 & -1 \\end{pmatrix}$$
-
-In Qiskit: \`qc.z(qubit_index)\``;
-  }
-
-  if (p.includes('swap')) {
-    return `### SWAP Gate
-
-The **SWAP** gate exchanges the quantum states of two qubits:
-$$\\text{SWAP}|a\\rangle|b\\rangle = |b\\rangle|a\\rangle$$
-
-It can be synthesized using three alternating CNOT gates:
-\`\`\`python
-qc.cx(0, 1)
-qc.cx(1, 0)
-qc.cx(0, 1)
-\`\`\`
-Or natively: \`qc.swap(0, 1)\`.`;
-  }
-
-  // Default context-aware response
-  return `Hello! I am your **AI Quantum Study Companion**.
-
-I am monitoring your active circuit with **${numQubits} qubit(s)** and **${ops.length} gate(s)**.
+I am monitoring your active circuit with **${currentQubits} qubit(s)** and **${ops.length} gate(s)**.
 
 **Current Circuit State:**
-- Qubits: ${numQubits}
+- Qubits: ${currentQubits}
 - Classical Bits: ${ctx.numClassicalBits}
 - Probabilities: ${ctx.probabilitiesStr}
 
 You can ask me:
-- **"apply GHZ States in circuit"** — creates an entangled 3-qubit GHZ state
-- **"apply Bell state"** — creates a 2-qubit entangled Bell pair
-- **"what does this H gate do?"** — explains superposition
-- **"explain this circuit"** — walks through your current gates
+- **"create Werner states"** — generates a bipartite Werner singlet circuit with noise mixing
+- **"create a Bell state"** — creates an entangled 2-qubit Bell pair
+- **"create GHZ state"** — generates a 3-qubit tripartite entangled state
+- **"what does the H gate do?"** — explains the Hadamard transformation
+- **"explain my current circuit"** — walks through your current gates
 - **"why am I getting this result?"** — analyzes simulation probabilities
-- **"fix my code"** — diagnoses and repairs circuit errors
+- **"fix my circuit"** — diagnoses and repairs circuit errors`;
 
-Feel free to ask any quantum question or request a circuit pattern!`;
+  return {
+    reply: defaultReply,
+    intent: 'concept_question',
+    request: userPrompt,
+    structuredData: {
+      intent: 'concept_question',
+      request: userPrompt,
+      explanation: defaultReply,
+    },
+  };
 }

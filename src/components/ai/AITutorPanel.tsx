@@ -99,17 +99,18 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
     };
 
     try {
-      const reply = await GeminiService.chat(userText, context, messages);
-
-      // Extract Python code block if present
-      const codeMatch = reply.match(/```python([\s\S]*?)```/);
-      const codeSnippet = codeMatch ? codeMatch[1].trim() : undefined;
+      const chatRes = await GeminiService.chat(userText, context, messages);
+      const replyContent = chatRes.content;
+      const codeSnippet =
+        chatRes.codeSnippet || chatRes.content.match(/```python([\s\S]*?)```/)?.[1]?.trim();
 
       const aiMsg: AIMessage = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
-        content: reply,
+        content: replyContent,
         codeSnippet,
+        intent: chatRes.intent,
+        structuredData: chatRes.structuredData,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -223,9 +224,16 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
               {/* Pure Python Qiskit code snippet */}
               {msg.codeSnippet && (
                 <div className="mt-3 pt-2.5 border-t border-slate-800">
-                  <div className="text-[10px] uppercase tracking-wider text-cyan-400 mb-1.5 font-mono font-bold flex items-center gap-1.5">
-                    <Code2 className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Suggested Python / Qiskit Code</span>
+                  <div className="text-[10px] uppercase tracking-wider text-cyan-400 mb-1.5 font-mono font-bold flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Generated Qiskit circuit</span>
+                    </div>
+                    {msg.structuredData?.requiredQubits && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
+                        {msg.structuredData.requiredQubits} Qubit{msg.structuredData.requiredQubits > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                   <pre className="bg-slate-900 p-2.5 rounded-xl text-[11px] font-mono text-cyan-200 overflow-x-auto border border-slate-800 leading-relaxed">
                     {msg.codeSnippet}

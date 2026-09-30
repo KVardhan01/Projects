@@ -4,3 +4,7 @@
 2026-09-29 10:37:04 | INFO | Registration | Registration started for username: Sekhar12345
 2026-09-30 09:13:09 | INFO | AITutor | Received question: "apply GHZ States in circuit"
 2026-09-30 09:13:16 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "apply GHZ States in circuit"
+2026-09-30 09:37:24 | INFO | AITutor | Received question: "create Werner States" | Intent: generate_circuit
+2026-09-30 09:37:38 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "create Werner States"
+2026-09-30 09:37:45 | INFO | AITutor | Received question: "explain my current circuit" | Intent: explain_circuit
+2026-09-30 09:37:53 | SUCCESS | AITutor | Generated response using model gemini-3.8-flash for "explain my current circuit"
