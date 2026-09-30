@@ -6,31 +6,106 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+/**
+ * Converts common quantum computing LaTeX notation into clean, unicode math symbols
+ * so raw LaTeX commands (e.g. \rho_W, |\Psi^-\rangle, \frac{1}{\sqrt{2}}) are rendered cleanly.
+ */
+export function formatLatexMath(latex: string): string {
+  if (!latex) return '';
+  return latex
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+    .replace(/\\rho_W/g, 'ρ_W')
+    .replace(/\\rho/g, 'ρ')
+    .replace(/\\Psi\^-\\rangle/g, 'Ψ⁻⟩')
+    .replace(/\\Psi\^\+\\rangle/g, 'Ψ⁺⟩')
+    .replace(/\\Phi\^-\\rangle/g, 'Φ⁻⟩')
+    .replace(/\\Phi\^\+\\rangle/g, 'Φ⁺⟩')
+    .replace(/\\Psi/g, 'Ψ')
+    .replace(/\\Phi/g, 'Φ')
+    .replace(/\\psi/g, 'ψ')
+    .replace(/\\phi/g, 'ϕ')
+    .replace(/\\theta/g, 'θ')
+    .replace(/\\lambda/g, 'λ')
+    .replace(/\\alpha/g, 'α')
+    .replace(/\\beta/g, 'β')
+    .replace(/\\gamma/g, 'γ')
+    .replace(/\\omega/g, 'ω')
+    .replace(/\\Delta/g, 'Δ')
+    .replace(/\\langle/g, '⟨')
+    .replace(/\\rangle/g, '⟩')
+    .replace(/\\otimes/g, ' ⊗ ')
+    .replace(/\\dagger/g, '†')
+    .replace(/\^\{\\dagger\}/g, '†')
+    .replace(/\^\\dagger/g, '†')
+    .replace(/\\approx/g, ' ≈ ')
+    .replace(/\\le/g, ' ≤ ')
+    .replace(/\\ge/g, ' ≥ ')
+    .replace(/\\in/g, ' ∈ ')
+    .replace(/\\neq/g, ' ≠ ')
+    .replace(/\\cdot/g, ' · ')
+    .replace(/\\times/g, ' × ')
+    .replace(/\\pm/g, ' ± ')
+    .replace(/\\sqrt\{(\d+)\}/g, '√$1')
+    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+    .replace(/\\sqrt/g, '√')
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
+    .replace(/\\quad/g, '   ')
+    .replace(/\\qquad/g, '      ')
+    .replace(/\\,/g, ' ')
+    .replace(/\\;/g, ' ')
+    .replace(/\\!/g, '')
+    .replace(/\\dots/g, '...')
+    .replace(/\\sum/g, '∑')
+    .replace(/\\prod/g, '∏')
+    .replace(/\^-\s*/g, '⁻')
+    .replace(/\^\+\s*/g, '⁺')
+    .replace(/I_4/g, 'I₄')
+    .trim();
+}
+
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
   className = '',
 }) => {
   if (!content) return null;
 
-  // Split content by fenced code blocks: ```lang ... ```
-  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
-  const parts: { type: 'code' | 'text'; language?: string; text: string }[] = [];
+  // Split content by:
+  // 1. Fenced code blocks: ```lang ... ```
+  // 2. Display math blocks: $$ ... $$
+  const blockRegex = /(```[a-zA-Z0-9_-]*\n[\s\S]*?```|\$\$[\s\S]*?\$\$)/g;
+  const parts: { type: 'code' | 'display_math' | 'text'; language?: string; text: string }[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = codeBlockRegex.exec(content)) !== null) {
+  while ((match = blockRegex.exec(content)) !== null) {
     if (match.index > lastIndex) {
       parts.push({
         type: 'text',
         text: content.slice(lastIndex, match.index),
       });
     }
-    parts.push({
-      type: 'code',
-      language: match[1]?.trim() || 'python',
-      text: match[2]?.trimEnd() || '',
-    });
-    lastIndex = match.index + match[0].length;
+
+    const matchedStr = match[0];
+    if (matchedStr.startsWith('```')) {
+      const codeLines = matchedStr.split('\n');
+      const firstLine = codeLines[0] || '```';
+      const lang = firstLine.replace('```', '').trim() || 'python';
+      const codeBody = codeLines.slice(1, -1).join('\n');
+      parts.push({
+        type: 'code',
+        language: lang,
+        text: codeBody,
+      });
+    } else if (matchedStr.startsWith('$$')) {
+      const mathBody = matchedStr.slice(2, -2).trim();
+      parts.push({
+        type: 'display_math',
+        text: mathBody,
+      });
+    }
+
+    lastIndex = match.index + matchedStr.length;
   }
 
   if (lastIndex < content.length) {
@@ -50,6 +125,16 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               language={part.language || 'python'}
               code={part.text}
             />
+          );
+        }
+        if (part.type === 'display_math') {
+          return (
+            <div
+              key={`dm-${pIdx}`}
+              className="my-2.5 p-3 rounded-xl bg-slate-950/80 border border-cyan-800/40 text-cyan-200 font-mono text-center text-xs overflow-x-auto shadow-inner"
+            >
+              {formatLatexMath(part.text)}
+            </div>
           );
         }
         return <TextMarkdownSection key={`tm-${pIdx}`} rawText={part.text} />;
@@ -159,7 +244,7 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
     if (trimmed.startsWith('#### ')) {
       flushList();
       elements.push(
-        <h4 key={`h4-${i}`} className="text-xs font-bold text-cyan-200/90 font-mono mt-2.5 mb-1">
+        <h4 key={`h4-${i}`} className="text-xs font-bold text-cyan-200 font-mono mt-2.5 mb-1">
           {renderInline(trimmed.slice(5))}
         </h4>
       );
@@ -224,7 +309,7 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
       continue;
     }
 
-    // Ordered List item: 1. , 2. (or **1. ...**)
+    // Ordered List item: 1. , 2.
     const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
     if (olMatch) {
       if (!currentList || currentList.type !== 'ol') {
@@ -235,18 +320,13 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
       continue;
     }
 
-    // Standalone bold line like **Werner State Construction** or **1. What is a Werner State?**
-    if (
-      trimmed.startsWith('**') &&
-      trimmed.endsWith('**') &&
-      trimmed.length >= 5 &&
-      !trimmed.slice(2, -2).includes('**')
-    ) {
+    // Standalone bold line header: e.g. **Werner State Construction** or **1. What is a Werner State?**
+    const standaloneBoldMatch = trimmed.match(/^\*\*([^*]+)\*\*$/);
+    if (standaloneBoldMatch) {
       flushList();
-      const boldHeading = trimmed.slice(2, -2);
       elements.push(
         <div key={`bh-${i}`} className="text-xs font-bold text-slate-100 font-mono mt-3 mb-1">
-          {renderInline(boldHeading)}
+          {renderInline(standaloneBoldMatch[1])}
         </div>
       );
       continue;
@@ -271,17 +351,14 @@ const TextMarkdownSection: React.FC<{ rawText: string }> = ({ rawText }) => {
  * - Bold: **text** or __text__
  * - Italic: *text* or _text_
  * - Inline Code: `code`
- * - Math notation: $|0\rangle$, $|1\rangle$, $$...$$, $\rho_W$
+ * - Math notation: $|0\rangle$, $|1\rangle$, $\rho_W$
  */
 function renderInline(text: string): React.ReactNode {
   if (!text) return null;
 
-  // Clean double-dollar math blocks into clean styled formulas
-  let sanitized = text.replace(/\$\$([\s\S]*?)\$\$/g, '[$1]');
-
   // Tokenize string for code (`...`), bold (**...**), italic (*...*), or math ($...$)
   const tokenRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|_[^_]+_|\$[^$]+\$)/g;
-  const parts = sanitized.split(tokenRegex);
+  const parts = text.split(tokenRegex);
 
   return parts.map((part, index) => {
     if (!part) return null;
@@ -308,7 +385,7 @@ function renderInline(text: string): React.ReactNode {
       const boldContent = part.slice(2, -2);
       return (
         <strong key={index} className="font-semibold text-slate-100">
-          {boldContent}
+          {renderInline(boldContent)}
         </strong>
       );
     }
@@ -333,9 +410,9 @@ function renderInline(text: string): React.ReactNode {
       return (
         <span
           key={index}
-          className="px-1 py-0.2 mx-0.5 font-mono text-cyan-200 bg-cyan-950/40 border border-cyan-800/40 rounded text-[11px]"
+          className="px-1.5 py-0.5 mx-0.5 font-mono text-cyan-200 bg-cyan-950/60 border border-cyan-800/60 rounded text-[11px]"
         >
-          {mathContent}
+          {formatLatexMath(mathContent)}
         </span>
       );
     }

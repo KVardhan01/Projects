@@ -99,11 +99,10 @@ export function extractErrorDetails(errorMsg: string, circuit?: CircuitModel): E
  * Strict priority-ordered intent detection:
  * Priority 1: Current circuit/simulation error diagnosis
  * Priority 2: Explicit debugging/fix request
- * Priority 3: Explicit circuit-generation/modification request
+ * Priority 3: Circuit Action Request (Generation or Modification)
  * Priority 4: Specific question about current circuit
  * Priority 5: Specific question about simulation results
  * Priority 6: Conceptual quantum-computing question
- * Priority 7: General educational explanation
  */
 export function detectUserIntent(prompt: string, context?: AIContext): AIUserIntent {
   const p = prompt.toLowerCase().trim();
@@ -121,167 +120,58 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
     }
   }
 
-  const errorKeywords = [
-    'issue',
-    'failing',
-    'fail',
-    'fails',
-    'error',
-    'wrong',
-    'problem',
-    'broken',
-    'not working',
-    'stuck',
-    'crash',
-    'collision',
-    'conflict',
-    'cannot run',
-    'wont run',
-    'invalid',
-  ];
-
-  const hasErrorKeyword = errorKeywords.some((kw) => p.includes(kw));
-
-  const isAskingWhyOrWhat =
-    p.startsWith('why') ||
-    p.startsWith('what is wrong') ||
-    p.startsWith('what is the issue') ||
-    p.startsWith('what is the problem') ||
-    p.startsWith('what happened') ||
-    p.startsWith('why did') ||
-    p.startsWith('where did') ||
-    p.includes('why is') ||
-    p.includes('why am i') ||
-    p.includes('why issue') ||
-    p.includes('why are') ||
-    p.includes('why does') ||
-    p.includes('why get') ||
-    p.includes('why getting');
-
   // =========================================================================
   // PRIORITY 1: Current circuit/simulation error diagnosis
   // =========================================================================
-  if (
-    hasErrorKeyword ||
-    (hasError && isAskingWhyOrWhat) ||
+  const isAskingAboutError =
+    p.includes('why is my circuit giving this error') ||
+    p.includes('why am i getting this error') ||
     p.includes('showing an error') ||
-    p.includes('getting this error') ||
-    p.includes('why is q') ||
     p.includes('why issue is getting') ||
-    (p.includes('why') && (p.includes('werner') || p.includes('bell') || p.includes('ghz') || p.includes('circuit')))
-  ) {
-    // Make sure it's not a purely conceptual question like "why does hadamard create superposition?"
-    const isPurePhysicsWhy =
-      (p.startsWith('why does') || p.startsWith('why is')) &&
-      !hasError &&
-      !hasErrorKeyword &&
-      (p.includes('create') || p.includes('entangle') || p.includes('rotate') || p.includes('phase'));
+    p.includes('why is q') ||
+    p.includes('why did it fail') ||
+    p.includes('why is it failing') ||
+    p.includes('why is this failing') ||
+    p.includes('why does it fail') ||
+    p.includes('what is the error') ||
+    p.includes('what is failing') ||
+    p.includes('what is wrong with my') ||
+    ((p.includes('why is my') || p.includes('why my')) &&
+      (p.includes('failing') ||
+        p.includes('fail') ||
+        p.includes('error') ||
+        p.includes('wrong') ||
+        p.includes('not working') ||
+        p.includes('issue') ||
+        p.includes('broken')));
 
-    if (!isPurePhysicsWhy) {
-      return 'error_diagnosis';
-    }
+  if (isAskingAboutError || (hasError && (p.includes('why') || p.includes('what is wrong')))) {
+    return 'error_diagnosis';
   }
 
   // =========================================================================
   // PRIORITY 2: Explicit debugging/fix request
   // =========================================================================
-  if (
+  const isDebuggingRequest =
     p.includes('fix my circuit') ||
     p.includes('fix my code') ||
     p.includes('fix the circuit') ||
     p.includes('fix the code') ||
     p.includes('debug my circuit') ||
-    p.includes('debug this') ||
+    p.includes('debug this circuit') ||
     p.includes('repair circuit') ||
-    p.includes('repair code') ||
-    p.includes('fix it') ||
+    p.includes('repair the circuit') ||
+    p.includes('solve this error') ||
     p.includes('help me fix') ||
-    p.includes('solve this error')
-  ) {
+    p === 'fix it' ||
+    p === 'fix my';
+
+  if (isDebuggingRequest) {
     return 'debug_circuit';
   }
 
   // =========================================================================
-  // PRIORITY 3: Explicit circuit-generation/modification request
-  // =========================================================================
-  const creationVerbs = [
-    'create',
-    'make',
-    'build',
-    'generate',
-    'construct',
-    'implement',
-    'apply',
-    'synthesize',
-    'prepare',
-    'design',
-    'code a',
-    'code the',
-  ];
-
-  const quantumTargets = [
-    'werner',
-    'bell',
-    'ghz',
-    'greenberger',
-    'w state',
-    'superposition',
-    'teleport',
-    'teleportation',
-    'grover',
-    'deutsch',
-    'deutsch-jozsa',
-    'qft',
-    'fourier',
-    'swap',
-    'singlet',
-    'triplet',
-    'circuit for',
-    'state in circuit',
-    'states in circuit',
-    'state',
-  ];
-
-  const hasCreationVerb = creationVerbs.some((v) => p.includes(v));
-  const hasQuantumTarget = quantumTargets.some((t) => p.includes(t));
-
-  const isConceptQuestion =
-    p.startsWith('how does') ||
-    p.startsWith('what is') ||
-    p.startsWith('what are') ||
-    p.startsWith('can you explain what') ||
-    p.startsWith('explain what is') ||
-    p.startsWith('explain what') ||
-    (p.startsWith('explain') && !hasCreationVerb);
-
-  if (hasCreationVerb && hasQuantumTarget && !isConceptQuestion && !hasErrorKeyword) {
-    return 'generate_circuit';
-  }
-
-  if (
-    (p.includes('werner') || p.includes('bell') || p.includes('ghz') || p.includes('teleport')) &&
-    !isConceptQuestion &&
-    !p.includes('explain') &&
-    !hasErrorKeyword &&
-    hasCreationVerb
-  ) {
-    return 'generate_circuit';
-  }
-
-  if (
-    p.startsWith('add ') ||
-    p.startsWith('remove ') ||
-    p.startsWith('change ') ||
-    p.startsWith('replace ') ||
-    p.includes('insert gate') ||
-    p.includes('add a gate') ||
-    p.includes('change this gate')
-  ) {
-    return 'modify_circuit';
-  }
-
-  // =========================================================================
-  // PRIORITY 4: Specific question about current circuit
+  // PRIORITY 3: Specific question about current circuit
   // =========================================================================
   if (
     p.includes('explain this circuit') ||
@@ -297,7 +187,7 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
   }
 
   // =========================================================================
-  // PRIORITY 5: Specific question about simulation results
+  // PRIORITY 4: Specific question about simulation results
   // =========================================================================
   if (
     p.includes('why am i getting 50/50') ||
@@ -311,8 +201,109 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
   }
 
   // =========================================================================
-  // PRIORITY 6: Conceptual question
+  // PRIORITY 5: Conceptual question (must not be an action request)
   // =========================================================================
+  const isExplicitConceptual =
+    p.startsWith('what is ') ||
+    p.startsWith('what are ') ||
+    p.startsWith('what does ') ||
+    p.startsWith('can you explain what ') ||
+    p.startsWith('explain what is ') ||
+    p.startsWith('explain what ') ||
+    p.startsWith('explain ') ||
+    p.startsWith('tell me about ') ||
+    p.startsWith('how does ');
+
+  // Note: phrases like "where is werner state" or "give me werner state" are NOT conceptual questions!
+  if (isExplicitConceptual) {
+    return 'concept_question';
+  }
+
+  // =========================================================================
+  // PRIORITY 6: Explicit circuit-generation / modification action request
+  // =========================================================================
+  const actionVerbsAndPhrases = [
+    'create',
+    'make',
+    'build',
+    'generate',
+    'give me',
+    'put',
+    'show',
+    'where is',
+    'where are',
+    'apply',
+    'add',
+    'insert',
+    'construct',
+    'implement',
+    'synthesize',
+    'prepare',
+    'design',
+    'set up',
+    'load',
+    'use',
+    'code a',
+    'code the',
+    'i want',
+    'can i have',
+    'can you give me',
+    'circuit for',
+    'circuit with',
+  ];
+
+  const quantumCircuitTargets = [
+    'werner',
+    'bell',
+    'ghz',
+    'greenberger',
+    'w state',
+    'w-state',
+    'teleport',
+    'teleportation',
+    'superposition',
+    'entangle',
+    'entangled',
+    'swap',
+    'grover',
+    'deutsch',
+    'deutsch-jozsa',
+    'qft',
+    'fourier',
+    'singlet',
+    'triplet',
+    'hadamard',
+    'cnot',
+    'gate',
+    'circuit',
+    'state',
+  ];
+
+  const hasAction = actionVerbsAndPhrases.some((v) => p.includes(v));
+  const hasTarget = quantumCircuitTargets.some((t) => p.includes(t));
+
+  if (hasAction && hasTarget) {
+    if (
+      p.startsWith('add ') ||
+      p.includes('add hadamard') ||
+      p.includes('add h ') ||
+      p.includes('add x ') ||
+      p.includes('add gate') ||
+      p.startsWith('apply x ') ||
+      p.startsWith('apply h ') ||
+      p.startsWith('apply gate') ||
+      p.includes('apply x gate') ||
+      p.includes('apply h gate') ||
+      p.includes('apply z gate') ||
+      p.includes('insert gate') ||
+      p.includes('remove gate') ||
+      p.includes('change gate')
+    ) {
+      return 'modify_circuit';
+    }
+    return 'generate_circuit';
+  }
+
   return 'concept_question';
 }
 
@@ -956,6 +947,274 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.
     };
   }
 
+  // SWAP Circuit Generation
+  if (intent === 'generate_circuit' && p.includes('swap')) {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# 2-qubit Quantum SWAP circuit
+qc = QuantumCircuit(2)
+
+# Step 1: Initialize q0 in excited state |1>
+qc.x(0)
+
+# Step 2: Swap states of q0 and q1 using SWAP gate
+qc.swap(0, 1)`;
+
+    const reply = `### Quantum SWAP Circuit Construction
+
+#### 1. What is a SWAP Circuit?
+A **SWAP** circuit exchanges the quantum states of two qubits: $|\\psi\\rangle |\\phi\\rangle \\to |\\phi\\rangle |\\psi\\rangle$. In computational basis representation:
+$$\\text{SWAP}|10\\rangle = |01\\rangle$$
+
+#### 2. Complete Qiskit Python Code
+\`\`\`python
+${qiskitCode}
+\`\`\`
+
+#### 3. Operations Breakdown
+- **X Gate** ($q_0$): Sets $q_0$ to $|1\\rangle$ so the system starts in $|10\\rangle$.
+- **SWAP Gate** ($q_0, q_1$): Exchanges wire states, outputting state $|01\\rangle$.
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your visual canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 2,
+      gates: ['X', 'SWAP'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: 2,
+        requiredQubits: 2,
+        gates: [
+          { type: 'X', qubits: [0], parameters: [] },
+          { type: 'SWAP', qubits: [0, 1], parameters: [] },
+        ],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // Superposition Circuit Generation
+  if (intent === 'generate_circuit' && (p.includes('superposition') || p.includes('hadamard'))) {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# 2-qubit Superposition circuit
+qc = QuantumCircuit(2)
+
+# Apply Hadamard gates to create equal superposition state (|++⟩)
+qc.h(0)
+qc.h(1)`;
+
+    const reply = `### Quantum Superposition Circuit
+
+#### 1. What is Superposition?
+A superposition circuit applies Hadamard ($H$) gates to transform computational basis $|0\\dots0\\rangle$ into an equal superposition of all $2^n$ computational states:
+$$|++\\rangle = \\frac{|00\\rangle + |01\\rangle + |10\\rangle + |11\\rangle}{2}$$
+
+#### 2. Complete Qiskit Python Code
+\`\`\`python
+${qiskitCode}
+\`\`\`
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 2,
+      gates: ['H'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: 2,
+        requiredQubits: 2,
+        gates: [
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'H', qubits: [1], parameters: [] },
+        ],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // General Fallback for generate_circuit
+  if (intent === 'generate_circuit') {
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# 2-qubit Quantum Circuit
+qc = QuantumCircuit(2)
+qc.h(0)
+qc.cx(0, 1)`;
+
+    const reply = `### Quantum Circuit Generation
+
+Generated an actionable 2-qubit quantum circuit:
+1. **H Gate** on $q_0$ generates quantum superposition.
+2. **CX (CNOT) Gate** ($q_0 \\to q_1$) creates quantum entanglement.
+
+\`\`\`python
+${qiskitCode}
+\`\`\`
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: 2,
+      gates: ['H', 'CX'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: 2,
+        requiredQubits: 2,
+        gates: [
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+        ],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // =========================================================================
+  // CIRCUIT MODIFICATION REQUESTS (modify_circuit)
+  // =========================================================================
+  if (intent === 'modify_circuit') {
+    const qMatch = p.match(/q(\d+)/i) || p.match(/qubit\s*(\d+)/i);
+    const targetQubit = qMatch ? parseInt(qMatch[1], 10) : 0;
+    const isBothHandCX = p.includes('hadamard') && p.includes('cnot');
+
+    let gateName = 'H';
+    let gateMethod = 'h';
+    let addedGatesText = `H gate on qubit q${targetQubit}`;
+
+    if (isBothHandCX) {
+      gateName = 'H and CX';
+      addedGatesText = 'H gate on q0 and CNOT gate from q0 to q1';
+    } else if (p.includes(' x') || p.includes('pauli-x') || p.includes('bit-flip')) {
+      gateName = 'X';
+      gateMethod = 'x';
+      addedGatesText = `X gate on qubit q${targetQubit}`;
+    } else if (p.includes(' z') || p.includes('pauli-z') || p.includes('phase-flip')) {
+      gateName = 'Z';
+      gateMethod = 'z';
+      addedGatesText = `Z gate on qubit q${targetQubit}`;
+    } else if (p.includes(' y') || p.includes('pauli-y')) {
+      gateName = 'Y';
+      gateMethod = 'y';
+      addedGatesText = `Y gate on qubit q${targetQubit}`;
+    } else if (p.includes(' s')) {
+      gateName = 'S';
+      gateMethod = 's';
+      addedGatesText = `S gate on qubit q${targetQubit}`;
+    } else if (p.includes(' t')) {
+      gateName = 'T';
+      gateMethod = 't';
+      addedGatesText = `T gate on qubit q${targetQubit}`;
+    } else if (p.includes('cnot') || p.includes('cx')) {
+      gateName = 'CX';
+      addedGatesText = 'CNOT gate from q0 to q1';
+    }
+
+    const regWidth = Math.max(currentQubits, targetQubit + 1, isBothHandCX ? 2 : 1);
+    let qiskitCode = '';
+    const structuredGates: Array<{ type: string; qubits: number[]; parameters: any[] }> = [];
+
+    if (context.code && context.code.includes('QuantumCircuit(')) {
+      const existingLines = context.code
+        .split('\n')
+        .filter((l) => l.trim() && !l.trim().startsWith('#'));
+      const headerLine = `qc = QuantumCircuit(${regWidth})`;
+      const cleanOps = existingLines.filter(
+        (l) => !l.includes('QuantumCircuit(') && !l.includes('import ')
+      );
+      if (isBothHandCX) {
+        cleanOps.push('qc.h(0)', 'qc.cx(0, 1)');
+        structuredGates.push(
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] }
+        );
+      } else if (gateName === 'CX') {
+        cleanOps.push('qc.cx(0, 1)');
+        structuredGates.push({ type: 'CX', qubits: [0, 1], parameters: [] });
+      } else {
+        cleanOps.push(`qc.${gateMethod}(${targetQubit})`);
+        structuredGates.push({ type: gateName, qubits: [targetQubit], parameters: [] });
+      }
+      qiskitCode = `from qiskit import QuantumCircuit\n\n${headerLine}\n${cleanOps.join('\n')}`;
+    } else {
+      if (isBothHandCX) {
+        qiskitCode = `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(${regWidth})\nqc.h(0)\nqc.cx(0, 1)`;
+        structuredGates.push(
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] }
+        );
+      } else if (gateName === 'CX') {
+        qiskitCode = `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(${regWidth})\nqc.cx(0, 1)`;
+        structuredGates.push({ type: 'CX', qubits: [0, 1], parameters: [] });
+      } else {
+        qiskitCode = `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(${regWidth})\nqc.${gateMethod}(${targetQubit})`;
+        structuredGates.push({ type: gateName, qubits: [targetQubit], parameters: [] });
+      }
+    }
+
+    const reply = `### Circuit Modification: ${addedGatesText}
+
+Added **${addedGatesText}** sequentially to your circuit without wire collisions.
+
+\`\`\`python
+${qiskitCode}
+\`\`\`
+
+Click **"Apply to Visual Circuit"** below to apply this modification to your visual canvas!`;
+
+    return {
+      reply,
+      intent: 'modify_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: regWidth,
+      gates: structuredGates.map((g) => g.type),
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'modify_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: regWidth,
+        requiredQubits: regWidth,
+        gates: structuredGates,
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
   // =========================================================================
   // PRIORITY 4: SPECIFIC QUESTION ABOUT CURRENT CIRCUIT
   // =========================================================================
@@ -1083,6 +1342,56 @@ In matrix form:
 $$CX = \\begin{pmatrix} 1 & 0 & 0 & 0 \\\\ 0 & 1 & 0 & 0 \\\\ 0 & 0 & 0 & 1 \\\\ 0 & 0 & 1 & 0 \\end{pmatrix}$$
 
 Applying a Hadamard to $q_0$ followed by a CNOT from $q_0 \\to q_1$ creates the maximally entangled Bell state $|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$.`;
+
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
+  }
+
+  if (p.includes('entangle')) {
+    const reply = `### Quantum Entanglement
+
+**Quantum Entanglement** is a physical phenomenon where multiple quantum particles interact such that the quantum state of each particle cannot be described independently of the state of the others, regardless of spatial separation.
+
+Mathematically, a composite state $|\\psi\\rangle$ is entangled if it cannot be written as a separable tensor product:
+$$|\\psi\\rangle \\neq |\\psi_A\\rangle \\otimes |\\psi_B\\rangle$$
+
+**Canonical Entangled States in Qubify:**
+- **Bell State:** $|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}$
+- **GHZ State:** $|\\text{GHZ}\\rangle = \\frac{|000\\rangle + |111\\rangle}{\\sqrt{2}}$
+- **W State:** $|W\\rangle = \\frac{|001\\rangle + |010\\rangle + |100\\rangle}{\\sqrt{3}}$
+
+To create an entangled circuit on your canvas, ask **"create a Bell state"** or **"create GHZ state"**!`;
+
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
+  }
+
+  if (p.includes('bell')) {
+    const reply = `### Bell States & Maximal Entanglement
+
+A **Bell State** (or EPR pair) is one of the four maximally entangled two-qubit quantum states:
+$$|\\Phi^+\\rangle = \\frac{|00\\rangle + |11\\rangle}{\\sqrt{2}}, \\quad |\\Phi^-\\rangle = \\frac{|00\\rangle - |11\\rangle}{\\sqrt{2}}$$
+$$|\\Psi^+\\rangle = \\frac{|01\\rangle + |10\\rangle}{\\sqrt{2}}, \\quad |\\Psi^-\\rangle = \\frac{|01\\rangle - |10\\rangle}{\\sqrt{2}}$$
+
+They form a complete orthonormal basis for the 4-dimensional two-qubit Hilbert space and violate Bell inequalities maximally (CHSH parameter $S = 2\\sqrt{2} > 2$).
+
+To generate this circuit in your editor, type **"create a Bell state"**!`;
 
     return {
       reply,
