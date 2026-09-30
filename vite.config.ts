@@ -138,11 +138,11 @@ function qubifyGoogleSheetsProxyPlugin() {
         : appsScriptUrl;
 
       // Forward request from Vite server to Google Apps Script.
-      // Use text/plain;charset=utf-8 so Apps Script doPost receives the body in e.postData.contents.
+      const incomingContentType = req.headers['content-type'] || 'application/json';
       let fetchRes = await fetch(target, {
         method: req.method || 'POST',
         headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
+          'Content-Type': incomingContentType,
         },
         body: req.method === 'GET' || req.method === 'HEAD' ? undefined : bodyText,
         redirect: 'manual',
@@ -150,15 +150,25 @@ function qubifyGoogleSheetsProxyPlugin() {
 
       // Google Apps Script redirects successful doPost to a GET at script.googleusercontent.com
       // Follow all 3xx redirects using GET
+      let redirectCount = 0;
       while (
         (fetchRes.status === 301 || fetchRes.status === 302 || fetchRes.status === 303 || fetchRes.status === 307) &&
-        fetchRes.headers.get('location')
+        fetchRes.headers.get('location') &&
+        redirectCount < 5
       ) {
-        const redirectUrl = fetchRes.headers.get('location')!;
+        redirectCount++;
+        const locationHeader = fetchRes.headers.get('location')!;
+        const redirectUrl = new URL(locationHeader, target).toString();
         fetchRes = await fetch(redirectUrl, {
           method: 'GET',
           redirect: 'manual',
         });
+      }
+
+      if (fetchRes.status === 401) {
+        console.warn(
+          '[Vite Proxy] Google Apps Script returned HTTP 401 Unauthorized. This occurs when "Who has access" is set to "Only myself" in Apps Script instead of "Anyone".'
+        );
       }
 
       const responseText = await fetchRes.text();
