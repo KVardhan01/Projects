@@ -4,27 +4,32 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
+import { GoogleGenAI } from '@google/genai';
+import {
+  formatQuantumContext,
+  synthesizeQuantumExpertResponse,
+} from './src/services/ai/quantumExpertEngine';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function qubifyLoggingPlugin() {
-  const logDir = path.resolve(__dirname, 'logs');
-  const logFile = path.join(logDir, 'qubify.log');
+const logDir = path.resolve(__dirname, 'logs');
+const logFile = path.join(logDir, 'qubify.log');
 
-  // Immediately ensure logs directory and file exist in the project root on Vite startup
-  try {
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-    if (!fs.existsSync(logFile)) {
-      fs.writeFileSync(logFile, '', 'utf-8');
-    }
-  } catch (initErr) {
-    console.warn('Failed to initialize logs directory:', initErr);
+// Immediately ensure logs directory and file exist in the project root on Vite startup
+try {
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
   }
+  if (!fs.existsSync(logFile)) {
+    fs.writeFileSync(logFile, '', 'utf-8');
+  }
+} catch (initErr) {
+  console.warn('Failed to initialize logs directory:', initErr);
+}
 
-  const appendLog = (level: string, moduleName: string, message: string, timestamp?: string) => {
+const appendLog = (level: string, moduleName: string, message: string, timestamp?: string) => {
+  try {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
@@ -43,8 +48,12 @@ function qubifyLoggingPlugin() {
 
     const entry = `${timeStr} | ${String(level).toUpperCase()} | ${moduleName || 'System'} | ${cleanMessage}\n`;
     fs.appendFileSync(logFile, entry, 'utf-8');
-  };
+  } catch (err) {
+    console.warn('Error appending log to file:', err);
+  }
+};
 
+function qubifyLoggingPlugin() {
   const handleLogMiddleware = (req: any, res: any, next: any) => {
     const isLogEndpoint =
       req.url &&
@@ -185,9 +194,206 @@ function qubifyGoogleSheetsProxyPlugin() {
   };
 }
 
+function qubifyGeminiPlugin() {
+  const handleAiChat = async (req: any, res: any, next: any) => {
+    const isAiEndpoint =
+      req.url &&
+      (req.url === '/api/ai/chat' ||
+        req.url.startsWith('/api/ai/chat?') ||
+        req.url.startsWith('/api/ai/chat/'));
+
+    if (!isAiEndpoint) {
+      return next();
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      });
+      return res.end();
+    }
+
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Method Not Allowed' }));
+    }
+
+    try {
+      const bodyText = await new Promise<string>((resolve, reject) => {
+        let data = '';
+        req.on('data', (chunk: any) => {
+          data += chunk;
+        });
+        req.on('end', () => resolve(data));
+        req.on('error', reject);
+      });
+
+      const payload = JSON.parse(bodyText || '{}');
+      const userPrompt = payload.prompt || '';
+      const context = payload.context || {};
+      const history = payload.history || [];
+
+      if (!userPrompt || typeof userPrompt !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, error: 'Missing prompt in request' }));
+      }
+
+      appendLog('INFO', 'AITutor', `Received question: "${userPrompt.slice(0, 80)}"`);
+
+      // Format workbench quantum context
+      const formatted = formatQuantumContext(context);
+
+      const systemInstruction = `You are the AI Quantum Study Companion & Tutor for Qubify, an interactive quantum computing learning platform.
+You are an expert quantum physicist and quantum computing software engineer.
+Your persona is encouraging, precise, mathematically grounded yet intuitive.
+
+CRITICAL QUANTUM CODE DIRECTIVE:
+1. All executable quantum circuits MUST BE PYTHON + QISKIT ONLY.
+2. NEVER generate TypeScript, JavaScript, JSX, or other languages as circuit code.
+3. Always format quantum circuits using standard Python Qiskit markdown code blocks:
+\`\`\`python
+from qiskit import QuantumCircuit
+
+qc = QuantumCircuit(...)
+...
+\`\`\`
+4. Qubify automatically generates an "Apply to Visual Circuit" button for every \`\`\`python ... \`\`\` code block. When the user asks to:
+   - "apply GHZ States in circuit" or "build a GHZ state"
+   - "apply Bell state" or "entangle qubits"
+   - "create superposition"
+   - "fix my code" or "repair circuit"
+   - "add gates" or "change the circuit"
+   YOU MUST provide the complete, runnable Python/Qiskit code block so the student can immediately click "Apply to Visual Circuit" to update their canvas!
+
+CURRENT WORKBENCH CONTEXT:
+1. Current number of qubits: ${formatted.numQubits}
+2. Current number of classical bits: ${formatted.numClassicalBits}
+3. Current circuit gates (${formatted.gateCount} total):
+${formatted.gateDetails}
+4. Current Python / Qiskit Code:
+\`\`\`python
+${formatted.activeCode}
+\`\`\`
+5. Current Simulation Results:
+   - Probabilities: ${formatted.probabilitiesStr}
+   - Measurement Counts: ${formatted.measurementCountsStr}
+6. Active Simulation / Validation Errors: ${formatted.simulationError}
+7. Lesson / Exercise Goal: ${formatted.exerciseGoal}
+8. Student Level: ${formatted.studentLevel}
+
+GUIDELINES FOR YOUR RESPONSE:
+1. Context Awareness: Explicitly inspect and address the student's active circuit above.
+2. Physics Intuition: Explain the physical state, Dirac ket notation (e.g. |GHZ⟩ = (|000⟩ + |111⟩)/√2), and gate mechanics.
+3. Standard Qiskit: Use standard methods (qc.h, qc.x, qc.y, qc.z, qc.s, qc.t, qc.cx, qc.swap, qc.measure, qc.measure_all).
+`;
+
+      const apiKey = process.env.GEMINI_API_KEY || '';
+      let replyText = '';
+
+      if (apiKey && apiKey.trim().length > 5) {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            },
+          },
+        });
+
+        // Try primary model gemini-3.8-flash, fallback to gemini-3.1-flash-lite if 503 or transient unavailability
+        const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+
+        for (const modelName of candidateModels) {
+          try {
+            const contents: any[] = [];
+            if (Array.isArray(history) && history.length > 0) {
+              const recent = history.slice(-4);
+              for (const h of recent) {
+                if (h.role === 'user' || h.role === 'assistant') {
+                  contents.push({
+                    role: h.role === 'assistant' ? 'model' : 'user',
+                    parts: [{ text: h.content || '' }],
+                  });
+                }
+              }
+            }
+            contents.push({
+              role: 'user',
+              parts: [{ text: userPrompt }],
+            });
+
+            const genResponse = await ai.models.generateContent({
+              model: modelName,
+              contents,
+              config: {
+                systemInstruction,
+              },
+            });
+
+            if (genResponse && genResponse.text) {
+              replyText = genResponse.text;
+              appendLog('SUCCESS', 'AITutor', `Generated response using model ${modelName} for "${userPrompt.slice(0, 40)}"`);
+              break;
+            }
+          } catch (modelErr: any) {
+            console.warn(`[AITutor] Model ${modelName} encountered error:`, modelErr?.message || modelErr);
+          }
+        }
+      }
+
+      if (!replyText) {
+        // Use quantum expert synthesis engine
+        replyText = synthesizeQuantumExpertResponse(userPrompt, context);
+        appendLog('INFO', 'AITutor', `Served response via quantum reasoning engine for "${userPrompt.slice(0, 40)}"`);
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(JSON.stringify({ success: true, reply: replyText }));
+    } catch (err: any) {
+      console.error('[AITutor] Error processing AI chat request:', err);
+      // Fallback
+      try {
+        const fallback = synthesizeQuantumExpertResponse(req.url, {});
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify({ success: true, reply: fallback }));
+      } catch {
+        res.writeHead(500, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify({ success: false, error: err?.message || 'AI Tutor Error' }));
+      }
+    }
+  };
+
+  return {
+    name: 'qubify-gemini-tutor',
+    configureServer(server: any) {
+      server.middlewares.use(handleAiChat);
+    },
+    configurePreviewServer(server: any) {
+      server.middlewares.use(handleAiChat);
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), qubifyLoggingPlugin(), qubifyGoogleSheetsProxyPlugin()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      qubifyLoggingPlugin(),
+      qubifyGoogleSheetsProxyPlugin(),
+      qubifyGeminiPlugin(),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

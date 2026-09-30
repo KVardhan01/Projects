@@ -74,6 +74,9 @@ How can I help you today? You can choose a quick topic below or type any questio
     setInput('');
     setIsThinking(true);
 
+    const measurementOps = circuit.operations.filter((op) => op.gate === 'M');
+    const numClassicalBits = measurementOps.length > 0 ? measurementOps.length : 0;
+
     const context: AIContext = {
       lessonTitle: lessonTitle || circuit.name,
       moduleTitle,
@@ -82,6 +85,7 @@ How can I help you today? You can choose a quick topic below or type any questio
       simulation: simulation || undefined,
       exerciseGoal,
       studentLevel: 'beginner',
+      numClassicalBits,
     };
 
     try {

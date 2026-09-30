@@ -23,6 +23,8 @@ export interface AIContext {
   exerciseGoal?: string;
   studentLevel?: 'beginner' | 'intermediate' | 'advanced';
   recentMistakes?: string[];
+  numClassicalBits?: number;
+  gateDetails?: string;
 }
 
 export interface AIRecommendation {

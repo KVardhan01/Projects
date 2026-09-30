@@ -83,6 +83,9 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
     setInput('');
     setIsThinking(true);
 
+    const measurementOps = circuit.operations.filter((op) => op.gate === 'M');
+    const numClassicalBits = measurementOps.length > 0 ? measurementOps.length : 0;
+
     const context: AIContext = {
       lessonTitle: lessonTitle || circuit.name,
       moduleTitle,
@@ -92,6 +95,7 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
       simulationError: simulationError || (validationErrors.length > 0 ? validationErrors.join('; ') : undefined),
       exerciseGoal,
       studentLevel: 'beginner',
+      numClassicalBits,
     };
 
     try {
