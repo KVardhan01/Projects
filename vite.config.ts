@@ -85,9 +85,121 @@ function qubifyLoggingPlugin() {
   };
 }
 
+const DEFAULT_APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbwvKXR90qNvHimyJPT1eddrT296sXP9cUfrrviA0xj8g5p3y8Bgsi6Owmgv4T7rwohU/exec';
+
+function qubifyGoogleSheetsProxyPlugin() {
+  const getTargetUrl = () => {
+    return (
+      process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
+      process.env.GOOGLE_APPS_SCRIPT_URL ||
+      DEFAULT_APPS_SCRIPT_URL
+    );
+  };
+
+  const handleProxy = async (req: any, res: any, next: any) => {
+    const isGoogleSheetsEndpoint =
+      req.url &&
+      (req.url === '/api/google-sheets' ||
+        req.url.startsWith('/api/google-sheets?') ||
+        req.url.startsWith('/api/google-sheets/'));
+
+    if (!isGoogleSheetsEndpoint) {
+      return next();
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      });
+      return res.end();
+    }
+
+    try {
+      let bodyText = '';
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+        bodyText = await new Promise<string>((resolve, reject) => {
+          let data = '';
+          req.on('data', (chunk: any) => {
+            data += chunk;
+          });
+          req.on('end', () => resolve(data));
+          req.on('error', reject);
+        });
+      }
+
+      const appsScriptUrl = getTargetUrl();
+      const queryIndex = req.url.indexOf('?');
+      const queryString = queryIndex !== -1 ? req.url.slice(queryIndex) : '';
+      const target = queryString
+        ? `${appsScriptUrl}${appsScriptUrl.includes('?') ? '&' : '?'}${queryString.slice(1)}`
+        : appsScriptUrl;
+
+      // Forward request from Vite server to Google Apps Script
+      // Node.js native fetch follows 302 redirects automatically
+      let fetchRes = await fetch(target, {
+        method: req.method || 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+          'User-Agent': 'Qubify-Vite-Proxy/1.0',
+        },
+        body: req.method === 'GET' || req.method === 'HEAD' ? undefined : bodyText,
+        redirect: 'follow',
+      });
+
+      // Handle redirect if manual or status 3xx is returned with location header
+      if (fetchRes.status >= 300 && fetchRes.status < 400 && fetchRes.headers.get('location')) {
+        const redirectUrl = fetchRes.headers.get('location')!;
+        fetchRes = await fetch(redirectUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Qubify-Vite-Proxy/1.0',
+          },
+        });
+      }
+
+      const responseText = await fetchRes.text();
+      const contentType = fetchRes.headers.get('content-type') || 'application/json; charset=utf-8';
+
+      res.writeHead(fetchRes.status, {
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      });
+      res.end(responseText);
+    } catch (proxyErr: any) {
+      console.error('[Vite Proxy] Error proxying to Google Apps Script:', proxyErr);
+      res.writeHead(502, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(
+        JSON.stringify({
+          success: false,
+          error: 'ProxyError',
+          message: `Vite server proxy failed to reach Google Apps Script: ${proxyErr?.message || proxyErr}`,
+        })
+      );
+    }
+  };
+
+  return {
+    name: 'qubify-google-sheets-proxy',
+    configureServer(server: any) {
+      server.middlewares.use(handleProxy);
+    },
+    configurePreviewServer(server: any) {
+      server.middlewares.use(handleProxy);
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), qubifyLoggingPlugin()],
+    plugins: [react(), tailwindcss(), qubifyLoggingPlugin(), qubifyGoogleSheetsProxyPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -97,6 +209,16 @@ export default defineConfig(() => {
       include: ['@monaco-editor/react', 'monaco-editor'],
     },
     server: {
+      port: 3000,
+      host: '0.0.0.0',
+      cors: true,
+      proxy: {
+        '/api/google-sheets': {
+          target: DEFAULT_APPS_SCRIPT_URL,
+          changeOrigin: true,
+          followRedirects: true,
+        },
+      },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

@@ -156,17 +156,11 @@ export class GoogleSheetsService {
     password: string;
     name?: string;
   }): Promise<SheetUserRow> {
-    const appsScriptUrl = this.getAppsScriptUrl();
-    if (!appsScriptUrl || appsScriptUrl.trim().length < 10) {
-      logger.error('Registration', 'Google Apps Script Web App URL is not configured');
-      throw new Error(
-        'Google Apps Script Web App URL is not configured. Please set VITE_GOOGLE_APPS_SCRIPT_URL.'
-      );
-    }
-
+    const proxyEndpoint = '/api/google-sheets';
     const username = params.username.trim();
     const password = params.password;
 
+    logger.info('Registration', `Registration started for username: ${username}`);
     logger.info('Registration', `Apps Script request started for username: ${username}`);
 
     const browserOrigin =
@@ -174,19 +168,13 @@ export class GoogleSheetsService {
         ? window.location.origin
         : 'unknown';
 
-    // Sanitize URL for logging: never expose sensitive tokens, passwords or secrets
-    const sanitizedUrl = appsScriptUrl.replace(
-      /([?&](?:password|token|key|secret|auth)=)[^&]*/gi,
-      '$1[REDACTED]'
-    );
-
     let res: Response | null = null;
 
     try {
-      res = await fetch(appsScriptUrl, {
+      res = await fetch(proxyEndpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           username,
@@ -202,7 +190,7 @@ export class GoogleSheetsService {
 
       logger.error(
         'Registration',
-        `Apps Script request failed | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: None | ResponseBody: None${errStack}`
+        `Apps Script request failed | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${proxyEndpoint} | BrowserOrigin: ${browserOrigin} | ResponseStatus: None | ResponseBody: None${errStack}`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -217,7 +205,7 @@ export class GoogleSheetsService {
     } catch (readErr: any) {
       logger.error(
         'Registration',
-        `Apps Script request failed reading response body | ErrorName: ${readErr?.name || 'Error'} | ErrorMessage: ${readErr?.message || 'Failed to read response body'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} ${httpStatusText} | ResponseBody: None`
+        `Apps Script request failed reading response body | ErrorName: ${readErr?.name || 'Error'} | ErrorMessage: ${readErr?.message || 'Failed to read response body'} | RequestURL: ${proxyEndpoint} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} ${httpStatusText} | ResponseBody: None`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -233,7 +221,7 @@ export class GoogleSheetsService {
     if (!res.ok) {
       logger.error(
         'Registration',
-        `Apps Script request failed with HTTP ${httpStatus} ${httpStatusText} | ErrorName: HTTPError | ErrorMessage: HTTP ${httpStatus} ${httpStatusText} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
+        `Apps Script request failed with HTTP ${httpStatus} ${httpStatusText} | ErrorName: HTTPError | ErrorMessage: HTTP ${httpStatus} ${httpStatusText} | RequestURL: ${proxyEndpoint} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -250,7 +238,7 @@ export class GoogleSheetsService {
 
       logger.error(
         'Registration',
-        `Apps Script request failed: Invalid JSON response | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}${errStack}`
+        `Apps Script request failed: Invalid JSON response | ErrorName: ${errName} | ErrorMessage: ${errMsg} | RequestURL: ${proxyEndpoint} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}${errStack}`
       );
       throw new Error('Unable to create account. Please try again.');
     }
@@ -274,7 +262,7 @@ export class GoogleSheetsService {
       const errorMsg = data.message || data.error || 'Unable to create account. Please try again.';
       logger.error(
         'Registration',
-        `Apps Script request returned failure | ErrorName: AppsScriptError | ErrorMessage: ${errorMsg} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
+        `Apps Script request returned failure | ErrorName: AppsScriptError | ErrorMessage: ${errorMsg} | RequestURL: ${proxyEndpoint} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
       );
       throw new Error(errorMsg);
     }
@@ -284,7 +272,7 @@ export class GoogleSheetsService {
     if (data.success !== true && data.status !== 'success') {
       logger.error(
         'Registration',
-        `Google Sheet write failed: ${data.message || 'Unknown response'} | ErrorName: WriteError | ErrorMessage: ${data.message || 'Unknown response'} | RequestURL: ${sanitizedUrl} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
+        `Google Sheet write failed: ${data.message || 'Unknown response'} | ErrorName: WriteError | ErrorMessage: ${data.message || 'Unknown response'} | RequestURL: ${proxyEndpoint} | BrowserOrigin: ${browserOrigin} | ResponseStatus: ${httpStatus} | ResponseBody: ${sanitizedBody || '[empty]'}`
       );
       throw new Error(data.message || 'Unable to create account. Please try again.');
     }
