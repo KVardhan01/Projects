@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import {
   formatQuantumContext,
   synthesizeQuantumExpertResponse,
@@ -345,7 +345,7 @@ You MUST fulfill this request by providing:
 6. A comparison with the current circuit: explicitly state whether the current circuit can/needs to be modified or replaced to produce it.
 7. Simulator Compatibility Note:
 - For pure states (e.g. Bell state, GHZ state, W state, Teleportation, Superposition, Grover, Deutsch-Jozsa), note that the circuit is fully supported by Qubify and ready to be applied to the visual canvas.
-- For Werner states specifically: Explain that an exact Werner state is a statistical mixed state. Qubify realizes this by synthesizing the pure Bell singlet core state (|Ψ-⟩) and configuring the depolarizing noise channel in the simulator to simulate the mixed ensemble. Provide the complete runnable Bell singlet Qiskit circuit and explain that clicking "Apply to Visual Circuit" will load the circuit and configure the depolarizing noise model.
+- For Werner states specifically: Explain that an exact Werner state is an open-system statistical mixed state ρ_W(p) = p |Ψ-⟩⟨Ψ-| + ((1-p)/4) I₄ requiring density-matrix simulation. Qubify operates on pure state vectors and cannot simulate exact mixed states. DO NOT label a pure Bell state as a Werner state, and state clearly that exact Werner-state preparation cannot be applied to the visual canvas.
 Do NOT claim that the circuit was changed unless the application actually changes the circuit.`
     : intent === 'explain_circuit'
     ? `The user wants you to explain their CURRENT circuit. Walk through their active gates and explain their physical function.`
@@ -376,7 +376,81 @@ ${formatted.activeCode}
 
       const apiKey = process.env.GEMINI_API_KEY || '';
       let replyText = '';
+      let rawGeminiOutput = '';
       let usedModel = '';
+
+      const circuitActionDeclaration = {
+        name: 'circuit_action',
+        description:
+          'Propose or execute a quantum circuit action. Call this tool whenever the user requests creating, generating, building, giving, adding, modifying, or applying a quantum state or circuit (e.g. Bell state, GHZ state, W state, teleportation, Werner state, custom gates). Do NOT call this tool for purely conceptual questions.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            actionType: {
+              type: Type.STRING,
+              description: 'Action type: "generate_circuit", "modify_circuit", or "explain_limitation"',
+            },
+            circuitName: {
+              type: Type.STRING,
+              description: 'Name of the circuit or quantum state (e.g. "Bell State", "GHZ State", "Werner State")',
+            },
+            qubits: {
+              type: Type.INTEGER,
+              description: 'Number of qubits required for this circuit',
+            },
+            qiskitCode: {
+              type: Type.STRING,
+              description: 'Complete, runnable Python Qiskit code for the circuit',
+            },
+            operations: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  type: {
+                    type: Type.STRING,
+                    description: 'Gate type: H, X, Y, Z, S, T, CX, SWAP, M',
+                  },
+                  qubits: {
+                    type: Type.ARRAY,
+                    items: { type: Type.INTEGER },
+                    description: 'Target or [control, target] qubit wire indices (0-indexed)',
+                  },
+                },
+                required: ['type', 'qubits'],
+              },
+              description: 'Ordered list of gate operations',
+            },
+            explanation: {
+              type: Type.STRING,
+              description: 'Educational explanation of how the circuit produces the requested state',
+            },
+            isSupportedBySimulator: {
+              type: Type.BOOLEAN,
+              description:
+                'Whether this quantum state can be simulated on Qubify\'s pure state-vector simulator. MUST be FALSE for statistical mixed states such as Werner states.',
+            },
+            unsupportedReason: {
+              type: Type.STRING,
+              description:
+                'If isSupportedBySimulator is false, state why (e.g. "Werner states are statistical mixed states requiring density-matrix simulation. Qubify operates on pure state vectors.")',
+            },
+          },
+          required: ['actionType', 'circuitName', 'qubits', 'explanation', 'isSupportedBySimulator'],
+        },
+      };
+
+      let qiskitCode: string | undefined;
+      let requiredQubits: number | undefined;
+      let qubits: number | undefined;
+      let gates: any[] | undefined;
+      let action: 'apply_to_visual_circuit' | 'explain_limitation' | 'none' = 'none';
+      let isSupportedBySimulator = true;
+      let unsupportedReason: string | undefined;
+      let noiseSettings: any = undefined;
+
+      const pLower = userPrompt.toLowerCase();
+      const isWernerRequest = pLower.includes('werner');
 
       if (apiKey && apiKey.trim().length > 5) {
         const ai = new GoogleGenAI({
@@ -431,13 +505,72 @@ PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is fai
               contents,
               config: {
                 systemInstruction,
+                tools: [{ functionDeclarations: [circuitActionDeclaration] }],
               },
             });
 
-            if (genResponse && genResponse.text) {
-              replyText = genResponse.text;
+            const functionCalls = genResponse.functionCalls;
+            if (functionCalls && functionCalls.length > 0) {
+              const call = functionCalls[0];
+              const args: any = call.args || {};
+              rawGeminiOutput = JSON.stringify(call);
               usedModel = modelName;
-              appendLog('SUCCESS', 'AITutor', `Generated response using model ${modelName} for "${userPrompt.slice(0, 40)}"`);
+
+              qubits = args.qubits;
+              requiredQubits = args.qubits;
+              qiskitCode = args.qiskitCode;
+              gates = args.operations;
+              isSupportedBySimulator = args.isSupportedBySimulator !== false;
+              unsupportedReason = args.unsupportedReason;
+              replyText =
+                genResponse.text ||
+                args.explanation ||
+                `### ${args.circuitName || 'Quantum Circuit'}\n\n${args.explanation || ''}`;
+
+              if (isWernerRequest && (intent === 'generate_circuit' || intent === 'modify_circuit')) {
+                action = 'explain_limitation';
+                isSupportedBySimulator = false;
+                unsupportedReason =
+                  "Exact Werner-state preparation is not supported by Qubify's simulator because Werner states are statistical mixed states requiring density-matrix simulation. Qubify operates on pure state vectors.";
+              } else if (
+                isSupportedBySimulator &&
+                (args.actionType === 'generate_circuit' ||
+                  args.actionType === 'modify_circuit' ||
+                  intent === 'generate_circuit' ||
+                  intent === 'modify_circuit')
+              ) {
+                action = 'apply_to_visual_circuit';
+              } else if (!isSupportedBySimulator) {
+                action = 'explain_limitation';
+              }
+              break;
+            } else if (genResponse && genResponse.text) {
+              replyText = genResponse.text;
+              rawGeminiOutput = genResponse.text;
+              usedModel = modelName;
+
+              const codeMatch = replyText.match(/```python([\s\S]*?)```/);
+              if (codeMatch) {
+                qiskitCode = codeMatch[1].trim();
+                const details = extractQiskitCodeDetails(qiskitCode);
+                requiredQubits = details.requiredQubits;
+                qubits = details.requiredQubits;
+                gates = details.structuredGates;
+                isSupportedBySimulator = details.isSupportedBySimulator;
+                unsupportedReason = details.unsupportedReason;
+              }
+
+              if (isWernerRequest && (intent === 'generate_circuit' || intent === 'modify_circuit')) {
+                action = 'explain_limitation';
+                isSupportedBySimulator = false;
+                unsupportedReason =
+                  "Exact Werner-state preparation is not supported by Qubify's simulator because Werner states are statistical mixed states requiring density-matrix simulation. Qubify operates on pure state vectors.";
+              } else if (
+                isSupportedBySimulator &&
+                (intent === 'generate_circuit' || intent === 'modify_circuit' || intent === 'debug_circuit')
+              ) {
+                action = 'apply_to_visual_circuit';
+              }
               break;
             }
           } catch (modelErr: any) {
@@ -446,23 +579,11 @@ PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is fai
         }
       }
 
-      let qiskitCode: string | undefined;
-      let requiredQubits: number | undefined;
-      let qubits: number | undefined;
-      let gates: any[] | undefined;
-      let action: 'apply_to_visual_circuit' | 'explain_limitation' | 'none' = 'none';
-      let isSupportedBySimulator = true;
-      let unsupportedReason: string | undefined;
-      let noiseSettings: any = undefined;
-      let expertRes: any = undefined;
-
-      const pLower = userPrompt.toLowerCase();
-      const isWernerRequest = pLower.includes('werner');
-
-      if (!replyText) {
-        // Use quantum expert synthesis engine
-        expertRes = synthesizeQuantumExpertResponse(userPrompt, context);
-        replyText = expertRes.reply;
+      // If Gemini did not return a response or was unavailable/quota-limited, fall back to quantum expert synthesis
+      if (!replyText || (!qiskitCode && (intent === 'generate_circuit' || intent === 'modify_circuit') && !isWernerRequest)) {
+        const expertRes = synthesizeQuantumExpertResponse(userPrompt, context);
+        if (!replyText) replyText = expertRes.reply;
+        if (!rawGeminiOutput) rawGeminiOutput = '(Synthesized via quantum expert engine)';
         qiskitCode = expertRes.qiskitCode;
         requiredQubits = expertRes.requiredQubits;
         qubits = expertRes.requiredQubits;
@@ -471,36 +592,48 @@ PRIORITY INSTRUCTION: The user is asking why their circuit has an issue / is fai
         action = expertRes.structuredData?.action || (expertRes.qiskitCode ? 'apply_to_visual_circuit' : 'none');
         isSupportedBySimulator = expertRes.structuredData?.isSupportedBySimulator !== false;
         unsupportedReason = expertRes.structuredData?.unsupportedReason;
-        appendLog('INFO', 'AITutor', `Served response via quantum reasoning engine for "${userPrompt.slice(0, 40)}"`);
-      } else {
-        const codeMatch = replyText.match(/```python([\s\S]*?)```/);
-        if (codeMatch) {
-          qiskitCode = codeMatch[1].trim();
-          const details = extractQiskitCodeDetails(qiskitCode);
-          requiredQubits = details.requiredQubits;
-          qubits = details.requiredQubits;
-          gates = details.structuredGates;
-          isSupportedBySimulator = details.isSupportedBySimulator;
-          unsupportedReason = details.unsupportedReason;
-
-          if (isWernerRequest && (intent === 'generate_circuit' || intent === 'modify_circuit')) {
-            action = 'apply_to_visual_circuit';
-            isSupportedBySimulator = true;
-            noiseSettings = {
-              enabled: true,
-              depolarizingRate: 0.25,
-              bitFlipRate: 0,
-              phaseFlipRate: 0,
-              readoutErrorRate: 0,
-            };
-          } else if (
-            isSupportedBySimulator &&
-            (intent === 'generate_circuit' || intent === 'modify_circuit' || intent === 'debug_circuit')
-          ) {
-            action = 'apply_to_visual_circuit';
-          }
-        }
+        appendLog('INFO', 'AITutor', `Served response via quantum expert reasoning engine for "${userPrompt.slice(0, 40)}"`);
+      } else if (isWernerRequest && (intent === 'generate_circuit' || intent === 'modify_circuit')) {
+        action = 'explain_limitation';
+        isSupportedBySimulator = false;
+        unsupportedReason =
+          "Exact Werner-state preparation is not supported by Qubify's simulator because Werner states are statistical mixed states requiring density-matrix simulation. Qubify operates on pure state vectors.";
       }
+
+      const circuitActionDetected = action === 'apply_to_visual_circuit' || action === 'explain_limitation';
+      const applyActionCreated = action === 'apply_to_visual_circuit';
+
+      // Required Step 2 temporary debug logging block
+      const debugBlock = [
+        '==================================================',
+        'AI USER MESSAGE:',
+        userPrompt,
+        '',
+        'GEMINI RAW RESPONSE:',
+        rawGeminiOutput ? rawGeminiOutput.slice(0, 300) : '(None)',
+        '',
+        'PARSED AI RESPONSE:',
+        replyText ? replyText.slice(0, 300) : '(None)',
+        '',
+        'CIRCUIT ACTION DETECTED:',
+        String(circuitActionDetected),
+        '',
+        'ACTION TYPE:',
+        action,
+        '',
+        'OPERATIONS:',
+        JSON.stringify(gates || []),
+        '',
+        'APPLY ACTION CREATED:',
+        String(applyActionCreated),
+        '',
+        'CIRCUIT MODEL UPDATE CALLED:',
+        'false (Ready for user Apply button click)',
+        '==================================================',
+      ].join('\n');
+
+      console.log(debugBlock);
+      appendLog('INFO', 'AITutor-DEBUG', debugBlock);
 
       const structuredData: any = {
         intent,

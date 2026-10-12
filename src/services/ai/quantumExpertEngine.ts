@@ -405,22 +405,23 @@ export function extractQiskitCodeDetails(code: string): {
 /**
  * Formats platform workbench context into normalized parameters for AI comprehension.
  */
-export function formatQuantumContext(context: AIContext): FormattedQuantumContext {
-  const circuit = context.circuit;
+export function formatQuantumContext(context?: AIContext): FormattedQuantumContext {
+  const safeCtx = context || ({} as AIContext);
+  const circuit = safeCtx.circuit;
   const numQubits = circuit?.numQubits || 2;
   const operations = circuit?.operations || [];
 
   // Count classical bits from measurement operations or explicit context
   const measurementOps = operations.filter((op) => op.gate === 'M');
   let numClassicalBits =
-    context.numClassicalBits !== undefined
-      ? context.numClassicalBits
+    safeCtx.numClassicalBits !== undefined
+      ? safeCtx.numClassicalBits
       : measurementOps.length > 0
       ? measurementOps.length
       : 0;
 
-  if (context.code && numClassicalBits === 0) {
-    const match = context.code.match(/QuantumCircuit\(\s*\d+\s*,\s*(\d+)\s*\)/);
+  if (safeCtx.code && numClassicalBits === 0) {
+    const match = safeCtx.code.match(/QuantumCircuit\(\s*\d+\s*,\s*(\d+)\s*\)/);
     if (match) {
       numClassicalBits = parseInt(match[1], 10);
     }
@@ -440,11 +441,11 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
       .join('\n');
   }
 
-  const activeCode = context.code || '# No active code';
+  const activeCode = safeCtx.code || '# No active code';
 
   let probabilitiesStr = 'Not yet simulated';
-  if (context.simulation?.probabilities) {
-    const entries = Object.entries(context.simulation.probabilities);
+  if (safeCtx.simulation?.probabilities) {
+    const entries = Object.entries(safeCtx.simulation.probabilities);
     if (entries.length > 0) {
       probabilitiesStr = entries
         .map(([k, v]) => `|${k}⟩: ${(Number(v) * 100).toFixed(1)}%`)
@@ -453,16 +454,16 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
   }
 
   let measurementCountsStr = 'No measurements recorded';
-  if (context.simulation?.measurementCounts) {
-    const counts = Object.entries(context.simulation.measurementCounts);
+  if (safeCtx.simulation?.measurementCounts) {
+    const counts = Object.entries(safeCtx.simulation.measurementCounts);
     if (counts.length > 0) {
       measurementCountsStr = counts.map(([k, v]) => `|${k}⟩: ${v}`).join(', ');
     }
   }
 
   let rawError =
-    context.simulationError ||
-    (context.validationErrors && context.validationErrors.length > 0 ? context.validationErrors.join('; ') : '');
+    safeCtx.simulationError ||
+    (safeCtx.validationErrors && safeCtx.validationErrors.length > 0 ? safeCtx.validationErrors.join('; ') : '');
 
   if (!rawError && circuit) {
     const val = QuantumCircuitSimulator.validateCircuit(circuit);
@@ -480,8 +481,8 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
     probabilitiesStr,
     measurementCountsStr,
     simulationError: rawError || 'None',
-    exerciseGoal: context.exerciseGoal || 'Open quantum experimentation',
-    studentLevel: context.studentLevel || 'Beginner',
+    exerciseGoal: safeCtx.exerciseGoal || 'Open quantum experimentation',
+    studentLevel: safeCtx.studentLevel || 'Beginner',
   };
 }
 
@@ -490,21 +491,22 @@ export function formatQuantumContext(context: AIContext): FormattedQuantumContex
  */
 export function synthesizeQuantumExpertResponse(
   userPrompt: string,
-  context: AIContext
+  context?: AIContext
 ): QuantumExpertResult {
+  const safeCtx = context || ({} as AIContext);
   const p = userPrompt.toLowerCase().trim();
-  const intent = detectUserIntent(userPrompt, context);
-  const ctx = formatQuantumContext(context);
-  const ops = context.circuit?.operations || [];
+  const intent = detectUserIntent(userPrompt, safeCtx);
+  const ctx = formatQuantumContext(safeCtx);
+  const ops = safeCtx.circuit?.operations || [];
   const currentQubits = ctx.numQubits;
 
   // =========================================================================
   // PRIORITY 1: ERROR DIAGNOSIS
   // =========================================================================
   if (intent === 'error_diagnosis') {
-    let rawError = context.simulationError || context.validationErrors?.[0] || '';
-    if (!rawError && context.circuit) {
-      const val = QuantumCircuitSimulator.validateCircuit(context.circuit);
+    let rawError = safeCtx.simulationError || safeCtx.validationErrors?.[0] || '';
+    if (!rawError && safeCtx.circuit) {
+      const val = QuantumCircuitSimulator.validateCircuit(safeCtx.circuit);
       if (!val.isValid && val.errors.length > 0) {
         rawError = val.errors[0];
       }
@@ -513,7 +515,7 @@ export function synthesizeQuantumExpertResponse(
       rawError = 'Multiple gates placed on qubit 0 at moment 2.';
     }
 
-    const errDetails = extractErrorDetails(rawError, context.circuit);
+    const errDetails = extractErrorDetails(rawError, safeCtx.circuit);
     const qIndex = errDetails.affectedQubit ?? 0;
     const mIndex = errDetails.affectedMoment ?? 2;
     const qStr = `q${qIndex}`;
@@ -573,14 +575,14 @@ This is a circuit layout validation conflict. It does not mean that the underlyi
   // PRIORITY 2: EXPLICIT DEBUGGING / FIX REQUEST
   // =========================================================================
   if (intent === 'debug_circuit') {
-    let rawError = context.simulationError || context.validationErrors?.[0] || '';
-    if (!rawError && context.circuit) {
-      const val = QuantumCircuitSimulator.validateCircuit(context.circuit);
+    let rawError = safeCtx.simulationError || safeCtx.validationErrors?.[0] || '';
+    if (!rawError && safeCtx.circuit) {
+      const val = QuantumCircuitSimulator.validateCircuit(safeCtx.circuit);
       if (!val.isValid && val.errors.length > 0) {
         rawError = val.errors[0];
       }
     }
-    const errDetails = extractErrorDetails(rawError, context.circuit);
+    const errDetails = extractErrorDetails(rawError, safeCtx.circuit);
 
     const qiskitCode = `from qiskit import QuantumCircuit
 
@@ -628,85 +630,41 @@ Click **"Apply to Visual Circuit"** below to load this repaired sequence into yo
   // PRIORITY 3: CIRCUIT GENERATION REQUESTS
   // =========================================================================
 
-  // Werner State Generation (Mixed state realized via Bell singlet core + Depolarizing Noise channel)
+  // Werner State Action Request (Mixed state requiring density-matrix simulation)
   if (intent === 'generate_circuit' && p.includes('werner')) {
-    const qiskitCode = `from qiskit import QuantumCircuit
+    const unsupportedReason =
+      "Exact Werner-state preparation is not supported by Qubify's simulator because Werner states are statistical mixed states requiring density-matrix simulation. Qubify currently operates on pure state vectors.";
 
-# 2-qubit Bell Singlet core circuit (|Ψ-⟩) for Werner State
-# In Qubify, the depolarizing noise model (rate 1-p) is enabled to simulate the mixed ensemble
-qc = QuantumCircuit(2)
-
-# Step 1: Prepare |11> computational basis
-qc.x(0)
-qc.x(1)
-
-# Step 2: Create equal superposition on q0
-qc.h(0)
-
-# Step 3: Entangle q1 with q0 using CNOT
-qc.cx(0, 1)
-
-# Step 4: Apply Pauli-Z to create relative phase: (|01> - |10>)/√2
-qc.z(0)`;
-
-    const reply = `### Werner State Construction & Depolarizing Noise Configuration
+    const reply = `### Werner State Circuit Request & Simulator Limitation
 
 #### 1. What is a Werner State?
-A **Werner State** $\\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell singlet state $|\\Psi^-\\rangle$ and the maximally mixed white-noise state $\\frac{I_4}{4}$:
+A **Werner State** $\\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell singlet state $|\\Psi^-\\rangle$ and the maximally mixed white-noise identity state $\\frac{I_4}{4}$:
 $$\\rho_W(p) = p |\\Psi^-\\rangle\\langle\\Psi^-| + \\frac{1-p}{4} I_4, \\quad p \\in [0, 1]$$
-- When $p = 1$: The state is the pure Bell singlet state $|\\Psi^-\\rangle = \\frac{|01\\rangle - |10\\rangle}{\\sqrt{2}}$.
-- When $p > \\frac{1}{3}$: The state is entangled and violates the Peres-Horodecki separability criterion.
-- When $p \\le \\frac{1}{3}$: The state is separable.
 
-#### 2. Simulator Implementation & Depolarizing Representation
-An exact Werner state is an open-system statistical mixture ($\\text{Tr}(\\rho^2) < 1$). Qubify's simulator represents this by synthesizing the pure Bell singlet core state $|\\Psi^-\\rangle$ and applying the **Depolarizing Noise Channel** with rate $(1-p)$ (configured at $0.25$ for $p=0.75$) to simulate stochastic white-noise mixing.
+#### 2. Why an Exact Werner State Cannot Be Applied as a Pure Visual Circuit
+An exact Werner state is an open-system statistical mixture with non-unit purity:
+$$\\text{Tr}(\\rho_W^2) = p^2 + \\frac{1-p^2}{4} < 1 \\quad (\\text{for } p < 1)$$
+A standard quantum circuit composed of deterministic unitary gates (such as $H$ and $CX$) evolves pure state vectors ($|\\psi\\rangle$), where $\\text{Tr}(\\rho^2) = 1$. It **cannot** prepare an exact Werner mixed state without open-system density matrix simulation or tracing out an auxiliary environment register.
 
-#### 3. Complete Qiskit Python Code
-\`\`\`python
-${qiskitCode}
-\`\`\`
+#### 3. Simulator Capability & Limitation Notice
+Qubify's circuit simulator operates on pure state vectors ($|\\psi\\rangle \\in \\mathbb{C}^{2^n}$) rather than density matrices ($\\rho$). Therefore, **exact Werner-state simulation is not currently supported** by the simulator, and cannot be applied directly as a static visual circuit.
 
-#### 4. Required Gates for Bell Singlet Core
-- **X Gates** ($q_0, q_1$): Prepare computational basis $|11\\rangle$.
-- **H Gate** ($q_0$): Creates superposition on $q_0$.
-- **CX (CNOT)** ($q_0 \\to q_1$): Entangles $q_1$ conditionally with $q_0$.
-- **Z Gate** ($q_0$): Introduces anti-symmetric relative phase, producing $|\\Psi^-\\rangle$.
-
-#### 5. Can the Current Circuit Be Modified?
-**Yes.** Clicking **"Apply to Visual Circuit"** below will load the Bell singlet core onto your visual canvas and configure the depolarizing noise model in the simulator.`;
+*(Note: In Qiskit with Aer, simulating mixed Werner states requires either a density matrix simulator \`aer_simulator_density_matrix\` or Kraus operators from \`qiskit_aer.noise\`.)*`;
 
     return {
       reply,
       intent: 'generate_circuit',
       request: userPrompt,
-      qiskitCode,
-      requiredQubits: 2,
-      gates: ['X', 'H', 'CX', 'Z'],
-      canModifyCurrentCircuit: true,
       structuredData: {
         intent: 'generate_circuit',
-        action: 'apply_to_visual_circuit',
-        isSupportedBySimulator: true,
+        action: 'explain_limitation',
+        isSupportedBySimulator: false,
+        unsupportedReason,
         request: userPrompt,
         explanation: reply,
-        qiskitCode,
         qubits: 2,
         requiredQubits: 2,
-        gates: [
-          { type: 'X', qubits: [0], parameters: [] },
-          { type: 'X', qubits: [1], parameters: [] },
-          { type: 'H', qubits: [0], parameters: [] },
-          { type: 'CX', qubits: [0, 1], parameters: [] },
-          { type: 'Z', qubits: [0], parameters: [] },
-        ],
-        noiseSettings: {
-          enabled: true,
-          depolarizingRate: 0.25,
-          bitFlipRate: 0,
-          phaseFlipRate: 0,
-          readoutErrorRate: 0,
-        },
-        canModifyCurrentCircuit: true,
+        canModifyCurrentCircuit: false,
       },
     };
   }
@@ -1144,8 +1102,8 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.
     let qiskitCode = '';
     const structuredGates: Array<{ type: string; qubits: number[]; parameters: any[] }> = [];
 
-    if (context.code && context.code.includes('QuantumCircuit(')) {
-      const existingLines = context.code
+    if (safeCtx.code && safeCtx.code.includes('QuantumCircuit(')) {
+      const existingLines = safeCtx.code
         .split('\n')
         .filter((l) => l.trim() && !l.trim().startsWith('#'));
       const headerLine = `qc = QuantumCircuit(${regWidth})`;
@@ -1369,6 +1327,52 @@ $$|\\psi\\rangle \\neq |\\psi_A\\rangle \\otimes |\\psi_B\\rangle$$
 - **W State:** $|W\\rangle = \\frac{|001\\rangle + |010\\rangle + |100\\rangle}{\\sqrt{3}}$
 
 To create an entangled circuit on your canvas, ask **"create a Bell state"** or **"create GHZ state"**!`;
+
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
+  }
+
+  if (p.includes('t gate') || p.includes(' t ')) {
+    const reply = `### The T Gate ($\\pi/8$ Phase Gate)
+
+The **T Gate** is a single-qubit phase gate that applies a $\\pi/4$ ($45^\\circ$) relative phase rotation around the Z-axis of the Bloch sphere:
+$$T = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{i\\pi/4} \\end{pmatrix}$$
+
+**Key Properties:**
+- **Action on Basis States:** $T|0\\rangle = |0\\rangle$ and $T|1\\rangle = e^{i\\pi/4}|1\\rangle$.
+- **Relation to S Gate:** $T^2 = S$ (the $\\pi/2$ phase gate) and $T^4 = Z$.
+- **Universal Quantum Computing:** When combined with Clifford gates (Hadamard and CNOT), the T gate enables universal fault-tolerant quantum computation (by the Eastin-Knill theorem, non-Clifford gates like T are essential for universality).`;
+
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
+  }
+
+  if (p.includes('s gate') || p.includes(' s ')) {
+    const reply = `### The S Gate (Phase Gate)
+
+The **S Gate** is a single-qubit Clifford gate that applies a $\\pi/2$ ($90^\\circ$) relative phase rotation around the Z-axis:
+$$S = \\begin{pmatrix} 1 & 0 \\\\ 0 & i \\end{pmatrix}$$
+
+**Key Properties:**
+- **Action on Basis States:** $S|0\\rangle = |0\\rangle$ and $S|1\\rangle = i|1\\rangle$.
+- **Square of S:** $S^2 = Z$ (Pauli-Z phase flip).
+- **Difference from T Gate:** The S gate shifts phase by $\\pi/2$, whereas the T gate shifts phase by $\\pi/4$ ($T^2 = S$). S is a Clifford gate, whereas T is a non-Clifford gate.`;
 
     return {
       reply,

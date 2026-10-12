@@ -37,6 +37,7 @@ export const AITutorPanel: React.FC<AITutorPanelProps> = ({
     updateFromQiskit,
     applyGeneratedCircuit,
     validationErrors,
+    runSimulation,
   } = useQuantum();
 
   const [messages, setMessages] = useState<AIMessage[]>([
@@ -127,6 +128,21 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
+      const isAction =
+        aiMsg.structuredData?.action === 'apply_to_visual_circuit' ||
+        aiMsg.structuredData?.action === 'explain_limitation';
+      const applyCreated = aiMsg.structuredData?.action === 'apply_to_visual_circuit';
+
+      console.log('==================================================');
+      console.log('AI USER MESSAGE:', userText);
+      console.log('PARSED AI RESPONSE:', aiMsg.content.slice(0, 150));
+      console.log('CIRCUIT ACTION DETECTED:', isAction);
+      console.log('ACTION TYPE:', aiMsg.structuredData?.action || 'none');
+      console.log('OPERATIONS:', JSON.stringify(aiMsg.structuredData?.gates || []));
+      console.log('APPLY ACTION CREATED:', applyCreated);
+      console.log('CIRCUIT MODEL UPDATE CALLED:', false);
+      console.log('==================================================');
+
       setMessages((prev) => [...prev, aiMsg]);
     } catch {
       setMessages((prev) => [
@@ -154,13 +170,14 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
       result = { success: false, errors: ['No circuit data found'] };
     }
 
+    console.log('==================================================');
+    console.log('CIRCUIT MODEL UPDATE CALLED:', result.success);
+    console.log('UPDATE RESULT ERRORS:', result.errors);
+    console.log('==================================================');
+
     if (result.success) {
-      const hasNoise = Boolean(msg.structuredData?.noiseSettings?.enabled);
-      setAppliedNotice(
-        hasNoise
-          ? 'Successfully applied circuit and depolarizing noise configuration to visual canvas!'
-          : 'Successfully synchronized circuit with visual canvas!'
-      );
+      runSimulation();
+      setAppliedNotice('Successfully synchronized circuit with visual canvas!');
     } else {
       setAppliedNotice(`Could not apply: ${result.errors[0] || 'Invalid code'}`);
     }
@@ -277,11 +294,6 @@ Ask me anything about your circuit, quantum mechanics, or Qiskit code!`,
                       <span>Generated Qiskit circuit</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {msg.structuredData?.noiseSettings?.enabled && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/80 border border-amber-700/80 text-amber-300 font-mono">
-                          Depolarizing Noise ({msg.structuredData.noiseSettings.depolarizingRate || 0.25})
-                        </span>
-                      )}
                       {(msg.structuredData?.qubits || msg.structuredData?.requiredQubits) && (
                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono">
                           {msg.structuredData?.qubits || msg.structuredData?.requiredQubits} Qubit

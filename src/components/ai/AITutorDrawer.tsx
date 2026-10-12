@@ -42,6 +42,7 @@ export const AITutorDrawer: React.FC<AITutorDrawerProps> = ({
     applyGeneratedCircuit,
     simulationError,
     validationErrors,
+    runSimulation,
   } = useQuantum();
 
   const [messages, setMessages] = useState<AIMessage[]>([
@@ -154,12 +155,8 @@ How can I help you today? You can choose a quick topic below or type any questio
     }
 
     if (result.success) {
-      const hasNoise = Boolean(msg.structuredData?.noiseSettings?.enabled);
-      setAppliedCodeNotice(
-        hasNoise
-          ? 'Applied circuit & depolarizing noise model to visual canvas!'
-          : 'Applied circuit from Qiskit code!'
-      );
+      runSimulation();
+      setAppliedCodeNotice('Applied circuit to visual canvas!');
     } else {
       setAppliedCodeNotice(`Could not apply: ${result.errors[0] || 'Invalid code'}`);
     }
@@ -248,11 +245,6 @@ How can I help you today? You can choose a quick topic below or type any questio
                       <span>Generated Qiskit circuit</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {msg.structuredData?.noiseSettings?.enabled && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300 font-mono">
-                          Depolarizing Noise ({msg.structuredData.noiseSettings.depolarizingRate || 0.25})
-                        </span>
-                      )}
                       {(msg.structuredData?.qubits || msg.structuredData?.requiredQubits) && (
                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-cyan-300 font-mono">
                           {msg.structuredData?.qubits || msg.structuredData?.requiredQubits} Qubit
