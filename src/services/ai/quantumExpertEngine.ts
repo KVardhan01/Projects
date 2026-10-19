@@ -1,6 +1,7 @@
 import { AIContext, AIUserIntent, StructuredCircuitData, StructuredGate } from '../../types/ai';
 import { CircuitModel } from '../../types/quantum';
 import { QuantumCircuitSimulator } from '../../quantum/QuantumCircuitSimulator';
+import { QiskitGenerator } from '../../quantum/parser/QiskitGenerator';
 
 export interface FormattedQuantumContext {
   numQubits: number;
@@ -208,26 +209,21 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
     p.startsWith('what are ') ||
     p.startsWith('what does ') ||
     p.startsWith('can you explain what ') ||
+    p.startsWith('can you explain ') ||
     p.startsWith('explain what is ') ||
     p.startsWith('explain what ') ||
     p.startsWith('explain ') ||
     p.startsWith('tell me about ') ||
-    p.startsWith('how does ');
+    p.startsWith('how does ') ||
+    p.startsWith('difference between ');
 
-  // Note: phrases like "where is werner state" or "give me werner state" are NOT conceptual questions!
-  if (isExplicitConceptual) {
-    return 'concept_question';
-  }
-
-  // =========================================================================
-  // PRIORITY 6: Explicit circuit-generation / modification action request
-  // =========================================================================
   const actionVerbsAndPhrases = [
     'create',
     'make',
     'build',
     'generate',
     'give me',
+    'give',
     'put',
     'show',
     'where is',
@@ -248,8 +244,16 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
     'i want',
     'can i have',
     'can you give me',
+    'can you add',
+    'can you apply',
+    'can you create',
+    'request',
+    'requesting',
+    'need',
+    'place',
     'circuit for',
     'circuit with',
+    'put in',
   ];
 
   const quantumCircuitTargets = [
@@ -277,30 +281,77 @@ export function detectUserIntent(prompt: string, context?: AIContext): AIUserInt
     'gate',
     'circuit',
     'state',
+    'z gate',
+    'x gate',
+    'y gate',
+    'h gate',
+    's gate',
+    't gate',
+    'cx gate',
+    'swap gate',
+    'pauli-z',
+    'pauli-x',
+    'pauli-y',
+    'phase flip',
+    'bit flip',
+    'not gate',
   ];
 
   const hasAction = actionVerbsAndPhrases.some((v) => p.includes(v));
-  const hasTarget = quantumCircuitTargets.some((t) => p.includes(t));
+  const hasTarget =
+    quantumCircuitTargets.some((t) => p.includes(t)) ||
+    /\b[hxyzst]\b.*gate/i.test(p) ||
+    /\bgate\b/i.test(p) ||
+    /\b(h|x|y|z|s|t|cx|swap)\b/i.test(p);
 
+  // If prompt is explicitly conceptual and DOES NOT contain action request verbs:
+  if (isExplicitConceptual && !hasAction) {
+    return 'concept_question';
+  }
+
+  // =========================================================================
+  // PRIORITY 6: Explicit circuit-generation / modification action request
+  // =========================================================================
   if (hasAction && hasTarget) {
-    if (
+    const isExplicitNewCircuit =
+      p.startsWith('create ') ||
+      p.startsWith('build ') ||
+      p.startsWith('generate ') ||
+      p.startsWith('make ') ||
+      p.startsWith('where is ') ||
+      p.startsWith('where are ') ||
+      p.startsWith('give me ') ||
+      p.startsWith('show me ') ||
+      p.includes('circuit for') ||
+      p.includes('build a') ||
+      p.includes('create a');
+
+    if (isExplicitNewCircuit && !p.includes('add to') && !p.includes('apply to q')) {
+      return 'generate_circuit';
+    }
+
+    const isModify =
       p.startsWith('add ') ||
-      p.includes('add hadamard') ||
-      p.includes('add h ') ||
-      p.includes('add x ') ||
-      p.includes('add gate') ||
-      p.startsWith('apply x ') ||
-      p.startsWith('apply h ') ||
-      p.startsWith('apply gate') ||
-      p.includes('apply x gate') ||
-      p.includes('apply h gate') ||
-      p.includes('apply z gate') ||
-      p.includes('insert gate') ||
-      p.includes('remove gate') ||
-      p.includes('change gate')
-    ) {
+      p.startsWith('apply ') ||
+      p.startsWith('insert ') ||
+      p.startsWith('put ') ||
+      p.startsWith('place ') ||
+      p.includes('add ') ||
+      p.includes('apply ') ||
+      p.includes('insert ') ||
+      p.includes('put ') ||
+      p.includes('to q') ||
+      p.includes('on q') ||
+      p.includes('to qubit') ||
+      p.includes('on qubit') ||
+      p.includes('on wire') ||
+      p.includes('change gate') ||
+      p.includes('remove gate');
+
+    if (isModify) {
       return 'modify_circuit';
     }
+
     return 'generate_circuit';
   }
 
@@ -630,41 +681,67 @@ Click **"Apply to Visual Circuit"** below to load this repaired sequence into yo
   // PRIORITY 3: CIRCUIT GENERATION REQUESTS
   // =========================================================================
 
-  // Werner State Action Request (Mixed state requiring density-matrix simulation)
+  // Werner State Action Request (Mixed state created via Bell state + depolarizing channel in simulator)
   if (intent === 'generate_circuit' && p.includes('werner')) {
-    const unsupportedReason =
-      "Exact Werner-state preparation is not supported by Qubify's simulator because Werner states are statistical mixed states requiring density-matrix simulation. Qubify currently operates on pure state vectors.";
+    const qiskitCode = `from qiskit import QuantumCircuit
 
-    const reply = `### Werner State Circuit Request & Simulator Limitation
+# 2-qubit Werner State Preparation
+# Prepares entangled Bell pair (|Φ+⟩) with depolarizing noise channel
+qc = QuantumCircuit(2)
+
+# Step 1: Create superposition on q0
+qc.h(0)
+
+# Step 2: Entangle q1 with q0
+qc.cx(0, 1)
+
+# In Qubify, Werner states are simulated by passing this entangled Bell pair
+# through the isotropic depolarizing noise channel:
+# ρ_W(p) = p |Φ+⟩⟨Φ+| + ((1-p)/4) I₄`;
+
+    const reply = `### Werner State Circuit Construction
 
 #### 1. What is a Werner State?
-A **Werner State** $\\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell singlet state $|\\Psi^-\\rangle$ and the maximally mixed white-noise identity state $\\frac{I_4}{4}$:
-$$\\rho_W(p) = p |\\Psi^-\\rangle\\langle\\Psi^-| + \\frac{1-p}{4} I_4, \\quad p \\in [0, 1]$$
+A **Werner State** $\\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \\otimes U \\rho_W U^\\dagger \\otimes U^\\dagger = \\rho_W$). It is defined as a convex mixture of the maximally entangled Bell state $|\\Phi^+\\rangle$ and the maximally mixed white-noise identity state $\\frac{I_4}{4}$:
+$$\\rho_W(p) = p |\\Phi^+\\rangle\\langle\\Phi^+| + \\frac{1-p}{4} I_4, \\quad p \\in [0, 1]$$
 
-#### 2. Why an Exact Werner State Cannot Be Applied as a Pure Visual Circuit
-An exact Werner state is an open-system statistical mixture with non-unit purity:
-$$\\text{Tr}(\\rho_W^2) = p^2 + \\frac{1-p^2}{4} < 1 \\quad (\\text{for } p < 1)$$
-A standard quantum circuit composed of deterministic unitary gates (such as $H$ and $CX$) evolves pure state vectors ($|\\psi\\rangle$), where $\\text{Tr}(\\rho^2) = 1$. It **cannot** prepare an exact Werner mixed state without open-system density matrix simulation or tracing out an auxiliary environment register.
+#### 2. Circuit Preparation & Simulation in Qubify
+1. **Entangled Base Circuit:** The circuit applies a Hadamard gate $H$ on qubit $q_0$ and a CNOT ($CX$) gate from $q_0 \\to q_1$, preparing the maximally entangled Bell state.
+2. **Depolarizing Noise Channel:** Clicking **"Apply to Visual Circuit"** below loads this 2-qubit Bell circuit and enables Qubify's isotropic depolarizing noise model ($p = 0.25$), accurately simulating the mixed Werner state!
 
-#### 3. Simulator Capability & Limitation Notice
-Qubify's circuit simulator operates on pure state vectors ($|\\psi\\rangle \\in \\mathbb{C}^{2^n}$) rather than density matrices ($\\rho$). Therefore, **exact Werner-state simulation is not currently supported** by the simulator, and cannot be applied directly as a static visual circuit.
+#### 3. Complete Qiskit Python Code
+\`\`\`python
+${qiskitCode}
+\`\`\`
 
-*(Note: In Qiskit with Aer, simulating mixed Werner states requires either a density matrix simulator \`aer_simulator_density_matrix\` or Kraus operators from \`qiskit_aer.noise\`.)*`;
+Click **"Apply to Visual Circuit"** below to load this circuit onto your visual canvas and enable the depolarizing channel in the simulator!`;
 
     return {
       reply,
       intent: 'generate_circuit',
       request: userPrompt,
+      qiskitCode,
+      requiredQubits: 2,
+      gates: ['H', 'CX'],
+      canModifyCurrentCircuit: true,
       structuredData: {
         intent: 'generate_circuit',
-        action: 'explain_limitation',
-        isSupportedBySimulator: false,
-        unsupportedReason,
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
         request: userPrompt,
         explanation: reply,
+        qiskitCode,
         qubits: 2,
         requiredQubits: 2,
-        canModifyCurrentCircuit: false,
+        gates: [
+          { type: 'H', qubits: [0], parameters: [] },
+          { type: 'CX', qubits: [0, 1], parameters: [] },
+        ],
+        noiseSettings: {
+          enabled: true,
+          depolarizingRate: 0.25,
+        },
+        canModifyCurrentCircuit: true,
       },
     };
   }
@@ -1011,6 +1088,111 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.
     };
   }
 
+  // Pauli-Z Gate Circuit Generation
+  if (
+    intent === 'generate_circuit' &&
+    (/\bz\b/i.test(p) || p.includes('pauli-z') || p.includes('phase flip') || p.includes('phase-flip') || p.includes('z gate'))
+  ) {
+    const qMatch = p.match(/q(\d+)/i) || p.match(/qubit\s*(\d+)/i) || p.match(/wire\s*(\d+)/i);
+    const targetQubit = qMatch ? parseInt(qMatch[1], 10) : 0;
+    const regWidth = Math.max(1, targetQubit + 1);
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# Pauli-Z (Phase-Flip) Gate Circuit
+qc = QuantumCircuit(${regWidth})
+
+# Apply Pauli-Z gate to qubit q${targetQubit}
+qc.z(${targetQubit})`;
+
+    const reply = `### Pauli-Z Gate Circuit Construction
+
+#### 1. What is the Pauli-Z Gate?
+The **Pauli-Z gate** ($\\sigma_z$) is a foundational single-qubit phase-flip gate:
+$$Z = \\begin{pmatrix} 1 & 0 \\\\ 0 & -1 \\end{pmatrix}$$
+It acts on computational basis states as:
+$$Z|0\\rangle = |0\\rangle, \\quad Z|1\\rangle = -|1\\rangle$$
+On the Bloch sphere, it performs a $180^\\circ$ rotation around the Z-axis, shifting the phase of $|1\\rangle$ by $\\pi$ while leaving measurement probabilities in the Z-basis unchanged.
+
+#### 2. Complete Qiskit Python Code
+\`\`\`python
+${qiskitCode}
+\`\`\`
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your visual canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: regWidth,
+      gates: ['Z'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: regWidth,
+        requiredQubits: regWidth,
+        gates: [{ type: 'Z', qubits: [targetQubit], parameters: [] }],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
+  // Pauli-X Gate Circuit Generation
+  if (
+    intent === 'generate_circuit' &&
+    (/\bx\b/i.test(p) || p.includes('pauli-x') || p.includes('bit flip') || p.includes('bit-flip') || p.includes('not gate') || p.includes('x gate'))
+  ) {
+    const qMatch = p.match(/q(\d+)/i) || p.match(/qubit\s*(\d+)/i) || p.match(/wire\s*(\d+)/i);
+    const targetQubit = qMatch ? parseInt(qMatch[1], 10) : 0;
+    const regWidth = Math.max(1, targetQubit + 1);
+    const qiskitCode = `from qiskit import QuantumCircuit
+
+# Pauli-X (Bit-Flip / NOT) Gate Circuit
+qc = QuantumCircuit(${regWidth})
+
+# Apply Pauli-X gate to qubit q${targetQubit}
+qc.x(${targetQubit})`;
+
+    const reply = `### Pauli-X (NOT) Gate Circuit Construction
+
+The **Pauli-X gate** (quantum NOT gate) inverts computational basis states:
+$$X|0\\rangle = |1\\rangle, \\quad X|1\\rangle = |0\\rangle$$
+
+\`\`\`python
+${qiskitCode}
+\`\`\`
+
+Click **"Apply to Visual Circuit"** below to load this circuit onto your visual canvas.`;
+
+    return {
+      reply,
+      intent: 'generate_circuit',
+      request: userPrompt,
+      qiskitCode,
+      requiredQubits: regWidth,
+      gates: ['X'],
+      canModifyCurrentCircuit: true,
+      structuredData: {
+        intent: 'generate_circuit',
+        action: 'apply_to_visual_circuit',
+        isSupportedBySimulator: true,
+        request: userPrompt,
+        explanation: reply,
+        qiskitCode,
+        qubits: regWidth,
+        requiredQubits: regWidth,
+        gates: [{ type: 'X', qubits: [targetQubit], parameters: [] }],
+        canModifyCurrentCircuit: true,
+      },
+    };
+  }
+
   // General Fallback for generate_circuit
   if (intent === 'generate_circuit') {
     const qiskitCode = `from qiskit import QuantumCircuit
@@ -1062,9 +1244,9 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.
   // CIRCUIT MODIFICATION REQUESTS (modify_circuit)
   // =========================================================================
   if (intent === 'modify_circuit') {
-    const qMatch = p.match(/q(\d+)/i) || p.match(/qubit\s*(\d+)/i);
+    const qMatch = p.match(/q(\d+)/i) || p.match(/qubit\s*(\d+)/i) || p.match(/wire\s*(\d+)/i);
     const targetQubit = qMatch ? parseInt(qMatch[1], 10) : 0;
-    const isBothHandCX = p.includes('hadamard') && p.includes('cnot');
+    const isBothHandCX = (p.includes('hadamard') || /\bh\b/i.test(p)) && (p.includes('cnot') || /\bcx\b/i.test(p));
 
     let gateName = 'H';
     let gateMethod = 'h';
@@ -1073,27 +1255,27 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.
     if (isBothHandCX) {
       gateName = 'H and CX';
       addedGatesText = 'H gate on q0 and CNOT gate from q0 to q1';
-    } else if (p.includes(' x') || p.includes('pauli-x') || p.includes('bit-flip')) {
-      gateName = 'X';
-      gateMethod = 'x';
-      addedGatesText = `X gate on qubit q${targetQubit}`;
-    } else if (p.includes(' z') || p.includes('pauli-z') || p.includes('phase-flip')) {
+    } else if (/\bz\b/i.test(p) || p.includes('pauli-z') || p.includes('phase-flip') || p.includes('phase flip') || p.includes('z gate')) {
       gateName = 'Z';
       gateMethod = 'z';
       addedGatesText = `Z gate on qubit q${targetQubit}`;
-    } else if (p.includes(' y') || p.includes('pauli-y')) {
+    } else if (/\bx\b/i.test(p) || p.includes('pauli-x') || p.includes('bit-flip') || p.includes('bit flip') || p.includes('not gate') || p.includes('x gate')) {
+      gateName = 'X';
+      gateMethod = 'x';
+      addedGatesText = `X gate on qubit q${targetQubit}`;
+    } else if (/\by\b/i.test(p) || p.includes('pauli-y') || p.includes('y gate')) {
       gateName = 'Y';
       gateMethod = 'y';
       addedGatesText = `Y gate on qubit q${targetQubit}`;
-    } else if (p.includes(' s')) {
+    } else if (/\bs\b/i.test(p) || p.includes('phase gate') || p.includes('s gate')) {
       gateName = 'S';
       gateMethod = 's';
       addedGatesText = `S gate on qubit q${targetQubit}`;
-    } else if (p.includes(' t')) {
+    } else if (/\bt\b/i.test(p) || p.includes('pi/8') || p.includes('t gate')) {
       gateName = 'T';
       gateMethod = 't';
       addedGatesText = `T gate on qubit q${targetQubit}`;
-    } else if (p.includes('cnot') || p.includes('cx')) {
+    } else if (/\b(cnot|cx)\b/i.test(p)) {
       gateName = 'CX';
       addedGatesText = 'CNOT gate from q0 to q1';
     }
@@ -1102,8 +1284,15 @@ Click **"Apply to Visual Circuit"** below to load this circuit onto your canvas.
     let qiskitCode = '';
     const structuredGates: Array<{ type: string; qubits: number[]; parameters: any[] }> = [];
 
-    if (safeCtx.code && safeCtx.code.includes('QuantumCircuit(')) {
-      const existingLines = safeCtx.code
+    const existingCode =
+      safeCtx.code && safeCtx.code.includes('QuantumCircuit(')
+        ? safeCtx.code
+        : safeCtx.circuit && safeCtx.circuit.operations.length > 0
+        ? QiskitGenerator.generate(safeCtx.circuit)
+        : '';
+
+    if (existingCode && existingCode.includes('QuantumCircuit(')) {
+      const existingLines = existingCode
         .split('\n')
         .filter((l) => l.trim() && !l.trim().startsWith('#'));
       const headerLine = `qc = QuantumCircuit(${regWidth})`;
@@ -1327,6 +1516,56 @@ $$|\\psi\\rangle \\neq |\\psi_A\\rangle \\otimes |\\psi_B\\rangle$$
 - **W State:** $|W\\rangle = \\frac{|001\\rangle + |010\\rangle + |100\\rangle}{\\sqrt{3}}$
 
 To create an entangled circuit on your canvas, ask **"create a Bell state"** or **"create GHZ state"**!`;
+
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
+  }
+
+  if (p.includes('z gate') || p.includes('pauli-z') || p.includes('phase flip') || /\bz\b/i.test(p)) {
+    const reply = `### The Pauli-Z (Phase-Flip) Gate
+
+The **Pauli-Z gate** ($\\sigma_z$) is a foundational single-qubit quantum operator that flips the relative phase of a qubit without changing its measurement probabilities in the computational basis:
+$$Z = \\begin{pmatrix} 1 & 0 \\\\ 0 & -1 \\end{pmatrix}$$
+
+**Key Properties:**
+- **Action on Computational Basis:**
+  $$Z|0\\rangle = |0\\rangle, \\quad Z|1\\rangle = -|1\\rangle$$
+- **Action on Superposition State:**
+  $$Z|+\\rangle = |-\\rangle, \\quad Z|-\\rangle = |+\\rangle$$
+  where $|+\\rangle = \\frac{|0\\rangle + |1\\rangle}{\\sqrt{2}}$ and $|-\\rangle = \\frac{|0\\rangle - |1\\rangle}{\\sqrt{2}}$.
+- **Bloch Sphere Rotation:** It corresponds to a $180^\\circ$ ($\\pi$ radian) rotation around the Z-axis.
+- **Clifford Group Member:** $Z = S^2 = T^4$, and $HZH = X$.`;
+
+    return {
+      reply,
+      intent: 'concept_question',
+      request: userPrompt,
+      structuredData: {
+        intent: 'concept_question',
+        request: userPrompt,
+        explanation: reply,
+      },
+    };
+  }
+
+  if (p.includes('x gate') || p.includes('pauli-x') || p.includes('not gate') || p.includes('bit flip') || /\bx\b/i.test(p)) {
+    const reply = `### The Pauli-X (Quantum NOT) Gate
+
+The **Pauli-X gate** ($\\sigma_x$) is the quantum analog of the classical NOT gate (bit-flip):
+$$X = \\begin{pmatrix} 0 & 1 \\\\ 1 & 0 \\end{pmatrix}$$
+
+**Key Properties:**
+- **Action on Computational Basis:**
+  $$X|0\\rangle = |1\\rangle, \\quad X|1\\rangle = |0\\rangle$$
+- **Bloch Sphere Rotation:** It rotates the state vector by $180^\\circ$ ($\\pi$ radians) around the X-axis.`;
 
     return {
       reply,

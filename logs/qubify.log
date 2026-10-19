@@ -18,3 +18,226 @@
 2026-09-30 10:22:40 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "create Werner state"
 2026-09-30 10:23:32 | INFO | AITutor | Received question: "Create a Bell state" | Intent: generate_circuit
 2026-09-30 10:23:41 | SUCCESS | AITutor | Generated response using model gemini-3.1-flash-lite for "Create a Bell state"
+2026-10-19 14:22:06 | INFO | AITutor | Received question: "where is werner state" | Intent: generate_circuit
+2026-10-19 14:22:08 | INFO | AITutor | Served response via quantum expert reasoning engine for "where is werner state"
+2026-10-19 14:22:08 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+where is werner state
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Werner State Circuit Construction
+
+#### 1. What is a Werner State?
+A **Werner State** $\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \otimes U \rho_W U^\dagger \otimes U^\dagger = \rho_W$). It is defined as a convex mixture of 
+
+CIRCUIT ACTION DETECTED:
+true
+
+ACTION TYPE:
+apply_to_visual_circuit
+
+OPERATIONS:
+[{"type":"H","qubits":[0],"parameters":[]},{"type":"CX","qubits":[0,1],"parameters":[]}]
+
+APPLY ACTION CREATED:
+true
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================
+2026-10-19 14:22:18 | INFO | AITutor | Received question: "where is werner state" | Intent: generate_circuit
+2026-10-19 14:22:21 | INFO | AITutor | Served response via quantum expert reasoning engine for "where is werner state"
+2026-10-19 14:22:21 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+where is werner state
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Werner State Circuit Construction
+
+#### 1. What is a Werner State?
+A **Werner State** $\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \otimes U \rho_W U^\dagger \otimes U^\dagger = \rho_W$). It is defined as a convex mixture of 
+
+CIRCUIT ACTION DETECTED:
+true
+
+ACTION TYPE:
+apply_to_visual_circuit
+
+OPERATIONS:
+[{"type":"H","qubits":[0],"parameters":[]},{"type":"CX","qubits":[0,1],"parameters":[]}]
+
+APPLY ACTION CREATED:
+true
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================
+2026-10-19 14:22:21 | INFO | AITutor | Received question: "give me a Werner state" | Intent: generate_circuit
+2026-10-19 14:22:23 | INFO | AITutor | Served response via quantum expert reasoning engine for "give me a Werner state"
+2026-10-19 14:22:23 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+give me a Werner state
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Werner State Circuit Construction
+
+#### 1. What is a Werner State?
+A **Werner State** $\rho_W(p)$ is a bipartite (2-qubit) quantum state that is invariant under any bilateral unitary transformation ($U \otimes U \rho_W U^\dagger \otimes U^\dagger = \rho_W$). It is defined as a convex mixture of 
+
+CIRCUIT ACTION DETECTED:
+true
+
+ACTION TYPE:
+apply_to_visual_circuit
+
+OPERATIONS:
+[{"type":"H","qubits":[0],"parameters":[]},{"type":"CX","qubits":[0,1],"parameters":[]}]
+
+APPLY ACTION CREATED:
+true
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================
+2026-10-19 14:22:23 | INFO | AITutor | Received question: "What is a Werner state?" | Intent: concept_question
+2026-10-19 14:22:25 | INFO | AITutor | Served response via quantum expert reasoning engine for "What is a Werner state?"
+2026-10-19 14:22:25 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+What is a Werner state?
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Werner States in Quantum Information
+
+A **Werner State** $\rho_W$ is a bipartite 2-qubit quantum state that is invariant under bilateral unitary transformations ($U \otimes U \rho_W U^\dagger \otimes U^\dagger = \rho_W$).
+
+It is defined as a convex mixture of the maximally entangled Bell singlet
+
+CIRCUIT ACTION DETECTED:
+false
+
+ACTION TYPE:
+none
+
+OPERATIONS:
+[]
+
+APPLY ACTION CREATED:
+false
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================
+2026-10-19 14:22:25 | INFO | AITutor | Received question: "request a Z gate" | Intent: generate_circuit
+2026-10-19 14:22:28 | INFO | AITutor | Served response via quantum expert reasoning engine for "request a Z gate"
+2026-10-19 14:22:28 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+request a Z gate
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Pauli-Z Gate Circuit Construction
+
+#### 1. What is the Pauli-Z Gate?
+The **Pauli-Z gate** ($\sigma_z$) is a foundational single-qubit phase-flip gate:
+$$Z = \begin{pmatrix} 1 & 0 \\ 0 & -1 \end{pmatrix}$$
+It acts on computational basis states as:
+$$Z|0\rangle = |0\rangle, \quad Z|1\rangle = -|1\
+
+CIRCUIT ACTION DETECTED:
+true
+
+ACTION TYPE:
+apply_to_visual_circuit
+
+OPERATIONS:
+[{"type":"Z","qubits":[0],"parameters":[]}]
+
+APPLY ACTION CREATED:
+true
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================
+2026-10-19 14:22:28 | INFO | AITutor | Received question: "create Bell state" | Intent: generate_circuit
+2026-10-19 14:22:31 | INFO | AITutor | Served response via quantum expert reasoning engine for "create Bell state"
+2026-10-19 14:22:31 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+create Bell state
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Bell State ($|\Phi^+\rangle$) Construction
+
+#### 1. What is a Bell State?
+A **Bell State** is one of the four maximally entangled two-qubit quantum states:
+$$|\Phi^+\rangle = \frac{|00\rangle + |11\rangle}{\sqrt{2}}$$
+
+#### 2. Required Number of Qubits
+**2 Qubits** ($q_0$ and $q_1$).
+
+#### 3. Re
+
+CIRCUIT ACTION DETECTED:
+true
+
+ACTION TYPE:
+apply_to_visual_circuit
+
+OPERATIONS:
+[{"type":"H","qubits":[0],"parameters":[]},{"type":"CX","qubits":[0,1],"parameters":[]}]
+
+APPLY ACTION CREATED:
+true
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================
+2026-10-19 14:23:03 | INFO | AITutor | Received question: "request a Z gate" | Intent: generate_circuit
+2026-10-19 14:23:05 | INFO | AITutor | Served response via quantum expert reasoning engine for "request a Z gate"
+2026-10-19 14:23:05 | INFO | AITutor-DEBUG | ==================================================
+AI USER MESSAGE:
+request a Z gate
+
+GEMINI RAW RESPONSE:
+(Synthesized via quantum expert engine)
+
+PARSED AI RESPONSE:
+### Pauli-Z Gate Circuit Construction
+
+#### 1. What is the Pauli-Z Gate?
+The **Pauli-Z gate** ($\sigma_z$) is a foundational single-qubit phase-flip gate:
+$$Z = \begin{pmatrix} 1 & 0 \\ 0 & -1 \end{pmatrix}$$
+It acts on computational basis states as:
+$$Z|0\rangle = |0\rangle, \quad Z|1\rangle = -|1\
+
+CIRCUIT ACTION DETECTED:
+true
+
+ACTION TYPE:
+apply_to_visual_circuit
+
+OPERATIONS:
+[{"type":"Z","qubits":[0],"parameters":[]}]
+
+APPLY ACTION CREATED:
+true
+
+CIRCUIT MODEL UPDATE CALLED:
+false (Ready for user Apply button click)
+==================================================

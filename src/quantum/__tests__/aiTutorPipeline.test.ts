@@ -70,7 +70,7 @@ export function runAITutorTestSuite() {
     );
   }
 
-  // TEST B: Circuit Action Request: "Give me a Werner state" / "create Werner state"
+  // TEST B: Circuit Action Request: "Give me a Werner state" / "where is werner state"
   {
     const prompt = 'give me a Werner state';
     const intent = detectUserIntent(prompt, dummyContext);
@@ -81,19 +81,68 @@ export function runAITutorTestSuite() {
       `Got intent: ${intent}`
     );
     assert(
-      res.structuredData?.action === 'explain_limitation',
-      'TEST B: Action is explain_limitation (does NOT show fake Apply button)',
+      res.structuredData?.action === 'apply_to_visual_circuit',
+      'TEST B: Action is apply_to_visual_circuit (shows Apply to Visual Circuit button)',
       `Got action: ${res.structuredData?.action}`
     );
     assert(
-      res.structuredData?.isSupportedBySimulator === false,
-      'TEST B: isSupportedBySimulator is false',
+      res.structuredData?.isSupportedBySimulator === true,
+      'TEST B: isSupportedBySimulator is true',
       `Got isSupportedBySimulator: ${res.structuredData?.isSupportedBySimulator}`
     );
     assert(
-      Boolean(res.structuredData?.unsupportedReason?.includes('density-matrix')),
-      'TEST B: States exact density-matrix limitation clearly',
-      `Got reason: ${res.structuredData?.unsupportedReason}`
+      Boolean(res.qiskitCode && res.qiskitCode.includes('QuantumCircuit(2)')),
+      'TEST B: Provides runnable 2-qubit Qiskit code',
+      `Code: ${res.qiskitCode}`
+    );
+    assert(
+      Boolean(res.structuredData?.noiseSettings?.enabled && res.structuredData?.noiseSettings?.depolarizingRate),
+      'TEST B: Provides depolarizing noise settings for Werner mixed state simulation',
+      `Noise: ${JSON.stringify(res.structuredData?.noiseSettings)}`
+    );
+    const converted = convertStructuredCircuitToModel(res.structuredData!, dummyContext.circuit);
+    assert(converted.isValid, 'TEST B: Werner circuit converts to valid CircuitModel');
+
+    // Also test "where is werner state"
+    const wherePrompt = 'where is werner state';
+    const whereIntent = detectUserIntent(wherePrompt, dummyContext);
+    const whereRes = synthesizeQuantumExpertResponse(wherePrompt, dummyContext);
+    assert(
+      whereIntent === 'generate_circuit',
+      'TEST B2: "where is werner state" enters generate_circuit action flow',
+      `Got intent: ${whereIntent}`
+    );
+    assert(
+      whereRes.structuredData?.action === 'apply_to_visual_circuit',
+      'TEST B2: "where is werner state" produces apply_to_visual_circuit action',
+      `Got action: ${whereRes.structuredData?.action}`
+    );
+  }
+
+  // TEST B3: Request a Z gate (Must NOT generate H+CX Bell state)
+  {
+    const zPrompt = 'request a Z gate';
+    const zIntent = detectUserIntent(zPrompt, dummyContext);
+    const zRes = synthesizeQuantumExpertResponse(zPrompt, dummyContext);
+    assert(
+      zIntent === 'modify_circuit' || zIntent === 'generate_circuit',
+      'TEST B3: "request a Z gate" recognized as circuit action',
+      `Got intent: ${zIntent}`
+    );
+    assert(
+      zRes.structuredData?.action === 'apply_to_visual_circuit',
+      'TEST B3: Action is apply_to_visual_circuit',
+      `Got action: ${zRes.structuredData?.action}`
+    );
+    assert(
+      Boolean(zRes.qiskitCode && (zRes.qiskitCode.includes('.z(') || zRes.qiskitCode.includes('qc.z'))),
+      'TEST B3: Generates Z gate in Qiskit code',
+      `Code: ${zRes.qiskitCode}`
+    );
+    assert(
+      !zRes.reply.includes('Bell State (|Φ+⟩)') && !zRes.reply.includes('CX (CNOT) Gate creates quantum entanglement'),
+      'TEST B3: Does NOT confuse Z gate with Bell state or CX entanglement',
+      `Reply: ${zRes.reply.slice(0, 100)}`
     );
   }
 
